@@ -1,0 +1,20 @@
+{
+  "name": "ネジマッチパズル",
+  "short_name": "ネジマッチ",
+  "description": "高難易度のネジマッチパズル。同色3個でクリア。",
+  "start_url": "screw.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3dba0",
+  "theme_color": "#ad7e3a",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
