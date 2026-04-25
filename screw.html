@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#ad7e3a">
+<title>ネジマッチパズル ― HARD</title>
+<link rel="stylesheet" href="screw.css">
+</head>
+<body>
+<div id="game">
+
+  <header id="hud">
+    <div class="hud-left">
+      <div class="hud-cell">
+        <div class="hud-label">LEVEL</div>
+        <div class="hud-value" id="lvNum">1</div>
+      </div>
+      <div class="hud-cell">
+        <div class="hud-label">残りネジ</div>
+        <div class="hud-value" id="remCount">0</div>
+      </div>
+      <div class="hud-cell">
+        <div class="hud-label">手数</div>
+        <div class="hud-value" id="moveCount">0</div>
+      </div>
+    </div>
+    <div class="hud-title">ネジマッチパズル</div>
+    <div class="hud-right">
+      <button id="btnUndo"   class="hud-btn" title="直前の手を戻す">
+        <span class="bi">↶</span><span class="bl">戻す</span><span class="bn" id="useUndo">3</span>
+      </button>
+      <button id="btnAdd"    class="hud-btn" title="トレイを2枠拡張">
+        <span class="bi">＋</span><span class="bl">枠+2</span><span class="bn" id="useAdd">1</span>
+      </button>
+      <button id="btnMagnet" class="hud-btn" title="同色3個をトレイに集める">
+        <span class="bi">⌬</span><span class="bl">磁石</span><span class="bn" id="useMag">1</span>
+      </button>
+      <button id="btnRestart" class="hud-btn ghost" title="このレベルを最初から">
+        <span class="bi">⟲</span><span class="bl">やり直し</span>
+      </button>
+    </div>
+  </header>
+
+  <div id="stageWrap">
+    <svg id="stage" viewBox="0 0 600 460" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+
+  <div id="trayWrap">
+    <div id="tray"></div>
+  </div>
+
+  <div id="overlay" class="hidden">
+    <div class="overlay-content">
+      <h2 id="overlayTitle">CLEAR!</h2>
+      <p  id="overlayText">次のレベルへ</p>
+      <div class="overlay-buttons">
+        <button id="overlayMain">次へ</button>
+        <button id="overlaySub" class="ghost">やり直す</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script src="screw.js"></script>
+</body>
+</html>
