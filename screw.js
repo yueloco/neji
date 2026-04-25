@@ -233,38 +233,98 @@ const HARD_POOL = [
   },
 ];
 
-// ----------- SE -----------
-const tapPool = [];
-for (let i = 0; i < 4; i++) {
-  const a = new Audio('tapu.ogg');
-  a.preload = 'auto';
-  a.volume = 0.6;
-  tapPool.push(a);
+// ----------- セーブデータ -----------
+const SAVE_KEY = 'screwMatch_save_v1';
+const Save = {
+  muted: false,
+  maxLevel: 0,
+  best: {},
+};
+function loadSave() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}');
+    Save.muted = !!s.muted;
+    Save.maxLevel = s.maxLevel || 0;
+    Save.best = s.best || {};
+  } catch (e) {}
 }
-let tapIdx = 0;
-function playTap() {
-  const a = tapPool[tapIdx];
-  tapIdx = (tapIdx + 1) % tapPool.length;
+function writeSave() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      muted: Save.muted, maxLevel: Save.maxLevel, best: Save.best,
+    }));
+  } catch (e) {}
+}
+loadSave();
+
+// ----------- SE -----------
+function makePool(file, n, vol) {
+  const arr = [];
+  for (let i = 0; i < n; i++) {
+    const a = new Audio(file);
+    a.preload = 'auto';
+    a.volume = vol;
+    arr.push(a);
+  }
+  return arr;
+}
+const tapPool   = makePool('tapu.ogg',   4, 0.6);
+const matchPool = makePool('match.ogg',  3, 0.7);
+const clearAudio    = new Audio('clear.ogg');    clearAudio.preload    = 'auto'; clearAudio.volume    = 0.85;
+const gameoverAudio = new Audio('gameover.ogg'); gameoverAudio.preload = 'auto'; gameoverAudio.volume = 0.85;
+let tapIdx = 0, matchIdx = 0;
+function playFromPool(pool, idxRef) {
+  if (Save.muted) return;
+  const a = pool[idxRef.i];
+  idxRef.i = (idxRef.i + 1) % pool.length;
   try { a.currentTime = 0; a.play().catch(()=>{}); } catch (e) {}
 }
-const clearAudio = new Audio('clear.ogg');
-clearAudio.preload = 'auto';
-clearAudio.volume = 0.85;
+const _tapRef = { i: 0 }, _matchRef = { i: 0 };
+function playTap()   { playFromPool(tapPool,   _tapRef); }
+function playMatch() { playFromPool(matchPool, _matchRef); }
 function playClear() {
+  if (Save.muted) return;
   try { clearAudio.currentTime = 0; clearAudio.play().catch(()=>{}); } catch (e) {}
 }
+function playGameover() {
+  if (Save.muted) return;
+  try { gameoverAudio.currentTime = 0; gameoverAudio.play().catch(()=>{}); } catch (e) {}
+}
+
+// 触覚
+function vib(pattern) {
+  if (Save.muted) return;
+  if (navigator.vibrate) { try { navigator.vibrate(pattern); } catch(e){} }
+}
+const VIB_TAP   = 12;
+const VIB_MATCH = [0, 25, 35, 25];
+const VIB_CLEAR = [0, 50, 60, 50, 60, 120];
+const VIB_OVER  = [0, 100, 80, 200];
 
 // iOS等で audio をユーザー操作後に unlock
 let audioPrimed = false;
 function primeAudio() {
   if (audioPrimed) return;
   audioPrimed = true;
-  [...tapPool, clearAudio].forEach(a => {
+  const all = [...tapPool, ...matchPool, clearAudio, gameoverAudio];
+  all.forEach(a => {
     const v = a.volume;
     a.volume = 0;
     a.play().then(() => { a.pause(); a.currentTime = 0; a.volume = v; })
             .catch(() => { a.volume = v; });
   });
+}
+
+// ミュート切替
+function toggleMute() {
+  Save.muted = !Save.muted;
+  writeSave();
+  updateMuteUI();
+  if (!Save.muted) playTap(); // ON にしたら確認音
+}
+function updateMuteUI() {
+  const ic = $('muteIcon');
+  if (ic) ic.textContent = Save.muted ? '🔇' : '🔊';
 }
 
 // ----------- 状態 -----------
@@ -630,6 +690,7 @@ function onScrewClick(id) {
   s.removed = true;
   if (s.el) s.el.remove();
   playTap();
+  vib(VIB_TAP);
   afterMove();
 }
 
@@ -693,6 +754,8 @@ function triggerMatch() {
     }
   }
   State.busy = true;
+  playMatch();
+  vib(VIB_MATCH);
   renderTray();
   updateHud();
 
@@ -784,19 +847,31 @@ function flashMessage(msg) {
 function win() {
   State.gameOver = true;
   playClear();
-  const next = State.levelIdx + 1;
-  const isHard = State.levelIdx >= LEVELS.length;
+  vib(VIB_CLEAR);
+
+  const cur = State.levelIdx;
+  if (cur + 1 > Save.maxLevel) Save.maxLevel = cur + 1;
+  const prev = Save.best[cur];
+  const isNewBest = prev == null || State.movesUsed < prev;
+  if (isNewBest) Save.best[cur] = State.movesUsed;
+  writeSave();
+
+  const next = cur + 1;
+  const isHard = cur >= LEVELS.length;
   const titleSuffix = isHard ? ' (ENDLESS)' : '';
+  const bestText = isNewBest ? '★ NEW BEST!' : `BEST: ${Save.best[cur]} 手`;
   showOverlay('CLEAR!',
-    `Lv${State.levelIdx+1}${titleSuffix} 突破\n名前: ${State.curLevel.name} / 手数: ${State.movesUsed}`,
+    `Lv${cur+1}${titleSuffix} 突破\n名前: ${State.curLevel.name} / 手数: ${State.movesUsed}\n${bestText}`,
     `次へ (Lv${next+1})`,
     () => initLevelAndHide(next),
     'やり直す',
-    () => initLevelAndHide(State.levelIdx)
+    () => initLevelAndHide(cur)
   );
 }
 function lose() {
   State.gameOver = true;
+  playGameover();
+  vib(VIB_OVER);
   showOverlay('GAME OVER', 'トレイが詰まりました\nもう一度挑戦しましょう',
     'やり直す',
     () => initLevelAndHide(State.levelIdx),
@@ -809,7 +884,7 @@ function initLevelAndHide(i){
   initLevel(i);
 }
 
-function showOverlay(title, text, mainLabel, mainFn, subLabel, subFn) {
+function showOverlay(title, text, mainLabel, mainFn, subLabel, subFn, thirdLabel, thirdFn) {
   $('overlayTitle').textContent = title;
   $('overlayText').textContent = text;
   $('overlayText').style.whiteSpace = 'pre-line';
@@ -817,16 +892,39 @@ function showOverlay(title, text, mainLabel, mainFn, subLabel, subFn) {
   $('overlaySub').textContent = subLabel;
   $('overlayMain').onclick = mainFn;
   $('overlaySub').onclick = subFn;
+  const third = $('overlayThird');
+  if (thirdLabel && thirdFn) {
+    third.textContent = thirdLabel;
+    third.onclick = thirdFn;
+    third.style.display = '';
+  } else {
+    third.style.display = 'none';
+  }
   $('overlay').classList.remove('hidden');
 }
 
 function showTitle() {
-  showOverlay(
-    'ネジマッチ',
-    `Lv1〜5 を抜けると Lv6 以降は\nランダム HARD ステージが続きます`,
-    'スタート (Lv1)', () => initLevelAndHide(0),
-    'ルール',          showRules
-  );
+  const resumeLv = Save.maxLevel || 0;
+  const hasSave = resumeLv > 0;
+  const bestSummary = hasSave
+    ? `前回 Lv${resumeLv} までクリア` + (Save.best[resumeLv-1] != null ? `\nLv${resumeLv} BEST: ${Save.best[resumeLv-1]} 手` : '')
+    : `Lv1〜5 を抜けると Lv6 以降は\nランダム HARD ステージが続きます`;
+  if (hasSave) {
+    showOverlay(
+      'ネジマッチ',
+      bestSummary,
+      `続きから (Lv${resumeLv+1})`, () => initLevelAndHide(resumeLv),
+      '最初から (Lv1)',              () => initLevelAndHide(0),
+      'ルール',                       showRules
+    );
+  } else {
+    showOverlay(
+      'ネジマッチ',
+      bestSummary,
+      'スタート (Lv1)', () => initLevelAndHide(0),
+      'ルール',          showRules
+    );
+  }
 }
 function showRules() {
   showOverlay(
@@ -842,7 +940,9 @@ $('btnUndo').addEventListener('click', doUndo);
 $('btnAdd').addEventListener('click', doAddSlot);
 $('btnMagnet').addEventListener('click', doMagnet);
 $('btnRestart').addEventListener('click', () => initLevel(State.levelIdx));
+$('btnMute').addEventListener('click', toggleMute);
 
 setupTapDelegate();
 document.addEventListener('pointerdown', primeAudio, { once: true });
+updateMuteUI();
 showTitle();
