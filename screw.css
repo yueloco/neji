@@ -4,9 +4,10 @@ html, body {
   margin: 0; padding: 0; height: 100%;
   font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif;
   color: #2a1d10;
+  -webkit-tap-highlight-color: transparent;
   user-select: none;
   -webkit-user-select: none;
-  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
 }
 html { height: 100dvh; }
 body {
@@ -14,11 +15,8 @@ body {
     radial-gradient(ellipse at 30% 0%, #fff5d6 0%, #f3dba0 55%, #d8b366 100%);
   min-height: 100vh;
   min-height: 100dvh;
-  overflow: hidden;
-  overscroll-behavior: none;
+  overscroll-behavior-y: contain;
   touch-action: manipulation;
-  position: fixed;
-  inset: 0;
 }
 
 #game {
@@ -116,10 +114,11 @@ body {
   flex: 1;
   position: relative;
   padding: 6px;
+  padding-bottom: max(6px, env(safe-area-inset-bottom));
   overflow: hidden;
   background:
     radial-gradient(ellipse at 50% 30%, #fff5d6 0%, #ecd28e 70%, #c89c4d 100%);
-  touch-action: none;
+  touch-action: pinch-zoom;
 }
 #stage {
   width: 100%;
@@ -179,11 +178,12 @@ body {
 
 /* ===== Tray ===== */
 #trayWrap {
-  padding: 10px 12px 14px;
-  padding-bottom: max(14px, env(safe-area-inset-bottom));
-  background: linear-gradient(180deg, #a87838 0%, #7a521e 100%);
-  border-top: 2px solid #4a2a10;
-  box-shadow: 0 -2px 0 rgba(255,255,255,0.18) inset;
+  padding: 10px 12px 12px;
+  background: linear-gradient(180deg, #7a521e 0%, #a87838 100%);
+  border-bottom: 2px solid #4a2a10;
+  box-shadow: 0 2px 0 rgba(255,255,255,0.12) inset, 0 3px 6px rgba(0,0,0,0.18);
+  position: relative;
+  z-index: 5;
 }
 #tray {
   display: flex;
