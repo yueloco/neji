@@ -233,6 +233,40 @@ const HARD_POOL = [
   },
 ];
 
+// ----------- SE -----------
+const tapPool = [];
+for (let i = 0; i < 4; i++) {
+  const a = new Audio('tapu.ogg');
+  a.preload = 'auto';
+  a.volume = 0.6;
+  tapPool.push(a);
+}
+let tapIdx = 0;
+function playTap() {
+  const a = tapPool[tapIdx];
+  tapIdx = (tapIdx + 1) % tapPool.length;
+  try { a.currentTime = 0; a.play().catch(()=>{}); } catch (e) {}
+}
+const clearAudio = new Audio('clear.ogg');
+clearAudio.preload = 'auto';
+clearAudio.volume = 0.85;
+function playClear() {
+  try { clearAudio.currentTime = 0; clearAudio.play().catch(()=>{}); } catch (e) {}
+}
+
+// iOS等で audio をユーザー操作後に unlock
+let audioPrimed = false;
+function primeAudio() {
+  if (audioPrimed) return;
+  audioPrimed = true;
+  [...tapPool, clearAudio].forEach(a => {
+    const v = a.volume;
+    a.volume = 0;
+    a.play().then(() => { a.pause(); a.currentTime = 0; a.volume = v; })
+            .catch(() => { a.volume = v; });
+  });
+}
+
 // ----------- 状態 -----------
 const State = {
   levelIdx: 0,
@@ -498,14 +532,38 @@ function drawScrew(s, parent) {
   // 色固有シンボル
   (SYMBOLS_SVG[s.color] || SYMBOLS_SVG[0])(g, 1);
 
-  const handler = ev => {
-    ev.preventDefault();
-    ev.stopPropagation();
-    onScrewClick(s.id);
-  };
-  g.addEventListener('pointerdown', handler);
+  // クリック処理は document 全体のデリゲート (タップ vs スワイプ判別)
   s.el = g;
   parent.appendChild(g);
+}
+
+// ============= タップ検出（スワイプを除外） =============
+const TAP_THRESHOLD_SQ = 100; // 移動 10px までならタップ扱い
+let tapState = null;
+function setupTapDelegate() {
+  document.addEventListener('pointerdown', ev => {
+    // ピンチ等の2本目以降は無視
+    if (!ev.isPrimary) { tapState = null; return; }
+    if (State.gameOver || State.busy) return;
+    const screwG = ev.target && ev.target.closest && ev.target.closest('.screw');
+    if (!screwG) { tapState = null; return; }
+    if (screwG.classList.contains('locked')) { tapState = null; return; }
+    const id = +screwG.getAttribute('data-id');
+    if (Number.isNaN(id)) return;
+    tapState = { pid: ev.pointerId, id, sx: ev.clientX, sy: ev.clientY };
+  }, { passive: true });
+  document.addEventListener('pointermove', ev => {
+    if (!tapState || ev.pointerId !== tapState.pid) return;
+    const dx = ev.clientX - tapState.sx, dy = ev.clientY - tapState.sy;
+    if (dx*dx + dy*dy > TAP_THRESHOLD_SQ) tapState = null;
+  }, { passive: true });
+  document.addEventListener('pointerup', ev => {
+    if (!tapState || ev.pointerId !== tapState.pid) return;
+    const id = tapState.id;
+    tapState = null;
+    onScrewClick(id);
+  }, { passive: true });
+  document.addEventListener('pointercancel', () => { tapState = null; }, { passive: true });
 }
 
 function renderTray() {
@@ -571,6 +629,7 @@ function onScrewClick(id) {
   State.tray.push({ color: s.color, screwId: s.id });
   s.removed = true;
   if (s.el) s.el.remove();
+  playTap();
   afterMove();
 }
 
@@ -724,6 +783,7 @@ function flashMessage(msg) {
 // ----------- 勝敗 -----------
 function win() {
   State.gameOver = true;
+  playClear();
   const next = State.levelIdx + 1;
   const isHard = State.levelIdx >= LEVELS.length;
   const titleSuffix = isHard ? ' (ENDLESS)' : '';
@@ -783,4 +843,6 @@ $('btnAdd').addEventListener('click', doAddSlot);
 $('btnMagnet').addEventListener('click', doMagnet);
 $('btnRestart').addEventListener('click', () => initLevel(State.levelIdx));
 
+setupTapDelegate();
+document.addEventListener('pointerdown', primeAudio, { once: true });
 showTitle();

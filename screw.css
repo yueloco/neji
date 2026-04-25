@@ -118,7 +118,7 @@ body {
   overflow: hidden;
   background:
     radial-gradient(ellipse at 50% 30%, #fff5d6 0%, #ecd28e 70%, #c89c4d 100%);
-  touch-action: pinch-zoom;
+  touch-action: manipulation;
 }
 #stage {
   width: 100%;
