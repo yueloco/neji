@@ -1,13 +1,90 @@
 'use strict';
 /* ============================================================
- * CORE DEFENSE — Step5: permanent meta upgrades + save/load
+ * CORE DEFENSE — Step6: synth audio + pause overlay polish
  * ============================================================ */
 (() => {
 
 const TWO_PI = Math.PI * 2;
 const SAVE_KEY = 'core-defense-meta-v1';
+const MUTE_KEY = 'core-defense-mute-v1';
 const rand   = (a, b) => a + Math.random() * (b - a);
 const pick   = arr => arr[(Math.random() * arr.length) | 0];
+
+// ---------- Audio (synthed via WebAudio) ----------
+const Sfx = (() => {
+  let ctx = null, master = null;
+  let muted = false;
+  try { muted = localStorage.getItem(MUTE_KEY) === '1'; } catch {}
+
+  function ensure() {
+    if (ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    ctx = new AC();
+    master = ctx.createGain();
+    master.gain.value = 0.35;
+    master.connect(ctx.destination);
+  }
+  function tone(freq, dur, type='sine', vol=0.4, glide=0) {
+    if (muted) return;
+    ensure(); if (!ctx) return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    if (glide) o.frequency.exponentialRampToValueAtTime(Math.max(40, freq * glide), t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  function noise(dur, vol=0.4, hp=200) {
+    if (muted) return;
+    ensure(); if (!ctx) return;
+    const t = ctx.currentTime;
+    const sr = ctx.sampleRate;
+    const buf = ctx.createBuffer(1, sr * dur, sr);
+    const ch = buf.getChannelData(0);
+    for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const filt = ctx.createBiquadFilter();
+    filt.type = 'highpass'; filt.frequency.value = hp;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(filt); filt.connect(g); g.connect(master);
+    src.start(t);
+  }
+  return {
+    isMuted: () => muted,
+    toggle() {
+      muted = !muted;
+      try { localStorage.setItem(MUTE_KEY, muted ? '1' : '0'); } catch {}
+      if (!muted) ensure();
+      return muted;
+    },
+    resume() { ensure(); if (ctx && ctx.state === 'suspended') ctx.resume(); },
+    shoot()       { tone(900 + Math.random() * 80, 0.05, 'square', 0.10, 0.55); },
+    hit()         { noise(0.05, 0.18, 1500); },
+    crit()        { tone(1400, 0.08, 'sawtooth', 0.16, 0.4); },
+    kill()        { tone(220, 0.12, 'triangle', 0.18, 0.5); },
+    bossDown()    { tone(80, 0.5, 'sawtooth', 0.30, 0.3); noise(0.4, 0.15, 200); },
+    coreHit()     { tone(140, 0.18, 'sawtooth', 0.30, 0.5); },
+    levelUp()     {
+      tone(660, 0.10, 'square', 0.18);
+      setTimeout(() => tone(880, 0.10, 'square', 0.18), 90);
+      setTimeout(() => tone(1320, 0.18, 'square', 0.20), 180);
+    },
+    waveStart()   { tone(440, 0.12, 'triangle', 0.18, 1.6); },
+    bossWarn()    { tone(160, 0.4, 'square', 0.22, 1.4); },
+    pickup()      { tone(1500, 0.04, 'sine', 0.10, 1.2); },
+    coin()        { tone(1200, 0.05, 'square', 0.18); setTimeout(() => tone(1800, 0.05, 'square', 0.18), 50); },
+    gameOver()    { tone(220, 0.6, 'sawtooth', 0.30, 0.25); },
+  };
+})();
 
 // ---------- Persistent meta progress ----------
 function defaultMeta() {
@@ -330,7 +407,7 @@ function spawnEnemy(type, originAngle) {
     dead: false,
   });
 
-  if (cfg.boss) showBanner('!!  BOSS  !!', `WAVE ${wave}`);
+  if (cfg.boss) { showBanner('!!  BOSS  !!', `WAVE ${wave}`); Sfx.bossWarn(); }
 }
 
 function spawnGem(x, y, value) {
@@ -550,6 +627,7 @@ function update(dt) {
     if (d < t.r + 6) {
       addXp(gm.value);
       gm.dead = true;
+      Sfx.pickup();
       spawnParticles(t.x, t.y, '#5ad6ff', 3, [40, 120], [0.15, 0.3]);
     }
   }
@@ -612,6 +690,7 @@ function applyDamage(e, dmg, isCrit) {
   }
   if (dmg > 0) e.hp -= dmg;
   e.flash = 0.12;
+  if (isCrit) Sfx.crit(); else Sfx.hit();
   spawnParticles(e.x, e.y, e.color, 3, [60, 180], [0.18, 0.4]);
   if (shieldAbsorbed > 0) {
     spawnDamageNumber(e.x, e.y - e.r * 0.5, fmtDmg(shieldAbsorbed), '#9ed4ff', 11);
@@ -639,6 +718,7 @@ function applySlow(e, factor, dur) {
 function onEnemyKilled(e) {
   game.kills++;
   game.score += e.score;
+  if (e.boss) Sfx.bossDown(); else Sfx.kill();
   // lifesteal
   const t = game.tower;
   if (t.lifesteal > 0 && t.hp < t.maxHp) {
@@ -673,8 +753,9 @@ function damageCore(amount) {
   t.hp -= amount;
   game.flash = Math.max(game.flash, 0.28);
   addShake(4 + amount * 1.5);
+  Sfx.coreHit();
   spawnParticles(t.x, t.y, '#ff4f7a', 14, [80, 260], [0.3, 0.7]);
-  if (t.hp <= 0) { t.hp = 0; gameOver(); }
+  if (t.hp <= 0) { t.hp = 0; Sfx.gameOver(); gameOver(); }
 }
 
 function addXp(amount) {
@@ -699,6 +780,7 @@ function showLevelUp() {
     mode = 'playing';
     return;
   }
+  Sfx.levelUp();
   spawnParticles(game.tower.x, game.tower.y, '#5ad6ff', 30, [120, 320], [0.4, 0.9]);
   addShake(5);
 
@@ -761,6 +843,7 @@ function spawnChild(parent, angle, off) {
 }
 
 function fireBullet(t, target) {
+  Sfx.shoot();
   const baseAng = Math.atan2(target.y - t.y, target.x - t.x);
   const n = Math.max(1, t.multishot | 0);
   for (let i = 0; i < n; i++) {
@@ -790,6 +873,7 @@ function nextWave() {
   game.waveQueue = rollWave(game.wave);
   game.waveTimer = 0;
   game.waveCleared = false;
+  Sfx.waveStart();
   if (game.wave % 5 === 0) {
     showBanner(`WAVE ${game.wave}`, 'BOSS WAVE');
   } else {
@@ -914,6 +998,25 @@ function render() {
   }
 
   ctx.restore(); // end shake
+
+  // pause overlay
+  if (paused && mode === 'playing') {
+    ctx.save();
+    ctx.fillStyle = 'rgba(5,7,13,0.55)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#e6ecff';
+    ctx.font = '900 32px -apple-system,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = '#5ad6ff';
+    ctx.shadowBlur = 14;
+    ctx.fillText('PAUSED', CX, CY - 10);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#8d9bbf';
+    ctx.font = '700 12px -apple-system,sans-serif';
+    ctx.fillText('⏸ ボタンで再開', CX, CY + 22);
+    ctx.restore();
+  }
 }
 
 function drawTower() {
@@ -1199,13 +1302,20 @@ function fadeHint() {
 
 // ---------- Buttons ----------
 btnPause.addEventListener('click', () => {
-  if (mode !== 'playing') return;
+  if (mode !== 'playing' && !(mode === 'paused')) return;
   paused = !paused;
   btnPause.textContent = paused ? '▶' : '⏸';
 });
 btnMute.addEventListener('click', () => {
-  // sound TBD in step 5
+  const m = Sfx.toggle();
+  const span = btnMute.querySelector('#muteIcon') || btnMute;
+  span.textContent = m ? '🔈' : '🔊';
 });
+// init mute icon
+btnMute.textContent = Sfx.isMuted() ? '🔈' : '🔊';
+
+// resume audio on first user gesture
+window.addEventListener('pointerdown', () => Sfx.resume(), { once: true });
 
 // ---------- Loop ----------
 let last = performance.now();
