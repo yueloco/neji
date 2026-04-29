@@ -1,6 +1,6 @@
 'use strict';
 /* ============================================================
- * CORE DEFENSE — Step2: enemy variety + bosses
+ * CORE DEFENSE — Step3: XP gems, damage numbers, particles, shake
  * ============================================================ */
 (() => {
 
@@ -114,15 +114,24 @@ function newGame() {
       damage: 3,
       bulletSpeed: 560,
       bulletRadius: 4,
+      level: 1,
+      xp: 0,
+      xpToNext: 6,
+      magnetRange: 110,
     },
     enemies: [],
     bullets: [],
     enemyShots: [],
+    gems: [],
+    particles: [],
+    dmgTexts: [],
+    shake: 0,
     waveQueue: rollWave(1),
     waveTimer: 0,
     waveCleared: false,
     betweenWaves: 0,
     flash: 0,
+    pendingLevelUps: 0,
   };
   mode = 'playing';
   paused = false;
@@ -174,6 +183,56 @@ function spawnEnemy(type, originAngle) {
   });
 
   if (cfg.boss) showBanner('!!  BOSS  !!', `WAVE ${wave}`);
+}
+
+function spawnGem(x, y, value) {
+  const a = Math.random() * TWO_PI;
+  const sp = rand(40, 120);
+  game.gems.push({
+    x, y,
+    vx: Math.cos(a) * sp,
+    vy: Math.sin(a) * sp,
+    value,
+    age: 0,
+    pulled: false,
+    dead: false,
+  });
+}
+
+function spawnParticles(x, y, color, count, speedRange = [60, 220], lifeRange = [0.3, 0.7]) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * TWO_PI;
+    const sp = rand(speedRange[0], speedRange[1]);
+    game.particles.push({
+      x, y,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp,
+      r: rand(1.5, 3),
+      life: rand(lifeRange[0], lifeRange[1]),
+      maxLife: 0,
+      color,
+      dead: false,
+    });
+    const p = game.particles[game.particles.length - 1];
+    p.maxLife = p.life;
+  }
+}
+
+function spawnDamageNumber(x, y, text, color = '#fff', size = 12) {
+  game.dmgTexts.push({
+    x, y: y - 4,
+    vy: -50,
+    life: 0.7,
+    maxLife: 0.7,
+    text: String(text),
+    color,
+    size,
+    dead: false,
+  });
+}
+
+function addShake(amount) {
+  game.shake = Math.min(14, Math.max(game.shake, amount));
 }
 
 function spawnEnemyShot(e, angle) {
@@ -304,24 +363,57 @@ function update(dt) {
     }
   }
 
-  // process kills (splits etc.)
-  for (let i = g.enemies.length - 1; i >= 0; i--) {
-    const e = g.enemies[i];
-    if (!e.dead) continue;
-    if (e._counted !== true && e.hp <= 0) {
-      g.kills++;
-      g.score += e.score;
-      if (e.splits > 0) {
-        for (let s = 0; s < e.splits; s++) {
-          const a = Math.random() * TWO_PI;
-          const off = e.r + 6;
-          spawnChild(e, a, off);
-        }
-      }
-      e._counted = true;
+  g.enemies = g.enemies.filter(e => !e.dead);
+
+  // ----- XP gems -----
+  for (const gm of g.gems) {
+    gm.age += dt;
+    const dx = t.x - gm.x, dy = t.y - gm.y;
+    const d = Math.hypot(dx, dy) || 1;
+    if (gm.pulled || d < t.magnetRange) {
+      gm.pulled = true;
+      const pullSpeed = 240 + gm.age * 600;
+      gm.vx += (dx / d) * pullSpeed * dt;
+      gm.vy += (dy / d) * pullSpeed * dt;
+      // damping
+      gm.vx *= 0.96; gm.vy *= 0.96;
+    } else {
+      // free drift slows down
+      gm.vx *= Math.pow(0.2, dt);
+      gm.vy *= Math.pow(0.2, dt);
+    }
+    gm.x += gm.vx * dt;
+    gm.y += gm.vy * dt;
+    if (d < t.r + 6) {
+      addXp(gm.value);
+      gm.dead = true;
+      spawnParticles(t.x, t.y, '#5ad6ff', 3, [40, 120], [0.15, 0.3]);
     }
   }
-  g.enemies = g.enemies.filter(e => !e.dead);
+  g.gems = g.gems.filter(gm => !gm.dead);
+
+  // ----- Particles -----
+  for (const p of g.particles) {
+    p.life -= dt;
+    if (p.life <= 0) { p.dead = true; continue; }
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= Math.pow(0.05, dt);
+    p.vy *= Math.pow(0.05, dt);
+  }
+  g.particles = g.particles.filter(p => !p.dead);
+
+  // ----- Damage numbers -----
+  for (const d of g.dmgTexts) {
+    d.life -= dt;
+    if (d.life <= 0) { d.dead = true; continue; }
+    d.y += d.vy * dt;
+    d.vy *= Math.pow(0.4, dt);
+  }
+  g.dmgTexts = g.dmgTexts.filter(d => !d.dead);
+
+  // ----- Shake decay -----
+  if (g.shake > 0) g.shake = Math.max(0, g.shake - dt * 24);
 
   // wave clear (queue empty AND no enemies on field)
   if (!g.waveCleared && g.waveQueue.length === 0 && g.enemies.length === 0) {
@@ -339,21 +431,76 @@ function update(dt) {
 }
 
 function applyDamage(e, dmg) {
+  let shieldAbsorbed = 0;
   if (e.shield > 0) {
-    const absorbed = Math.min(e.shield, dmg);
-    e.shield -= absorbed;
-    dmg -= absorbed;
+    shieldAbsorbed = Math.min(e.shield, dmg);
+    e.shield -= shieldAbsorbed;
+    dmg -= shieldAbsorbed;
   }
   if (dmg > 0) e.hp -= dmg;
   e.flash = 0.12;
-  if (e.hp <= 0) e.dead = true;
+  spawnParticles(e.x, e.y, e.color, 3, [60, 180], [0.18, 0.4]);
+  if (shieldAbsorbed > 0) {
+    spawnDamageNumber(e.x, e.y - e.r * 0.5, shieldAbsorbed, '#9ed4ff', 11);
+  }
+  if (dmg > 0) {
+    spawnDamageNumber(e.x, e.y - e.r * 0.7, dmg, '#fff7a8', 12);
+  }
+  if (e.hp <= 0) {
+    e.dead = true;
+    onEnemyKilled(e);
+  }
+}
+
+function onEnemyKilled(e) {
+  game.kills++;
+  game.score += e.score;
+  // big particle burst + XP drop
+  spawnParticles(e.x, e.y, e.color, e.boss ? 28 : 9, [80, 280], [0.35, 0.8]);
+  if (e.boss) {
+    addShake(8);
+    spawnDamageNumber(e.x, e.y, 'BOSS DOWN', '#ffd24a', 18);
+  }
+  // gems: bosses drop a swarm
+  const gemValue = Math.max(1, Math.round(e.score * 0.1));
+  const gemCount = e.boss ? 8 : (e.score >= 24 ? 2 : 1);
+  for (let i = 0; i < gemCount; i++) spawnGem(e.x, e.y, gemValue);
+  // splitter children
+  if (e.splits > 0) {
+    for (let s = 0; s < e.splits; s++) {
+      const a = Math.random() * TWO_PI;
+      spawnChild(e, a, e.r + 6);
+    }
+  }
 }
 
 function damageCore(amount) {
   const t = game.tower;
   t.hp -= amount;
   game.flash = Math.max(game.flash, 0.28);
+  addShake(4 + amount * 1.5);
+  spawnParticles(t.x, t.y, '#ff4f7a', 14, [80, 260], [0.3, 0.7]);
   if (t.hp <= 0) { t.hp = 0; gameOver(); }
+}
+
+function addXp(amount) {
+  const t = game.tower;
+  t.xp += amount;
+  while (t.xp >= t.xpToNext) {
+    t.xp -= t.xpToNext;
+    t.level++;
+    t.xpToNext = Math.round(6 + t.level * 4 + t.level * t.level * 0.5);
+    game.pendingLevelUps++;
+  }
+  if (game.pendingLevelUps > 0) onLevelUp();
+}
+
+function onLevelUp() {
+  // Step 4 will replace this with a 3-card chooser; for now just feedback.
+  showBanner('LEVEL UP', `Lv.${game.tower.level}`);
+  spawnParticles(game.tower.x, game.tower.y, '#5ad6ff', 30, [120, 320], [0.4, 0.9]);
+  addShake(5);
+  game.pendingLevelUps--;
 }
 
 function spawnChild(parent, angle, off) {
@@ -431,6 +578,33 @@ function render() {
 
   if (!game) return;
 
+  // ----- shake offset for entity layer -----
+  const sk = game.shake;
+  const ox = sk > 0 ? (Math.random() - 0.5) * sk : 0;
+  const oy = sk > 0 ? (Math.random() - 0.5) * sk : 0;
+  ctx.save();
+  ctx.translate(ox, oy);
+
+  // gems (under entities)
+  const gemPulse = 1 + Math.sin(performance.now() / 180) * 0.18;
+  for (const gm of game.gems) {
+    ctx.save();
+    ctx.fillStyle = '#5ad6ff';
+    ctx.shadowColor = '#5ad6ff';
+    ctx.shadowBlur = 14;
+    ctx.translate(gm.x, gm.y);
+    ctx.rotate(gm.age * 4);
+    const r = 4 * gemPulse;
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r, 0);
+    ctx.lineTo(0, r);
+    ctx.lineTo(-r, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
   // bullets
   for (const b of game.bullets) {
     ctx.save();
@@ -456,20 +630,64 @@ function render() {
   }
 
   // enemies
-  for (const e of game.enemies) {
-    drawEnemy(e);
-  }
+  for (const e of game.enemies) drawEnemy(e);
 
   // tower
+  drawTower();
+
+  // particles (above entities)
+  for (const p of game.particles) {
+    const k = Math.max(0, p.life / p.maxLife);
+    ctx.save();
+    ctx.globalAlpha = k;
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, TWO_PI);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // damage numbers
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const d of game.dmgTexts) {
+    const k = Math.max(0, d.life / d.maxLife);
+    ctx.save();
+    ctx.globalAlpha = k;
+    ctx.fillStyle = d.color;
+    ctx.font = `800 ${d.size}px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif`;
+    ctx.shadowColor = '#000';
+    ctx.shadowBlur = 3;
+    ctx.fillText(d.text, d.x, d.y);
+    ctx.restore();
+  }
+
+  ctx.restore(); // end shake
+}
+
+function drawTower() {
   const t = game.tower;
-  // outer ring
+  // XP ring (outer arc)
+  const xpPct = t.xp / t.xpToNext;
   ctx.save();
-  ctx.strokeStyle = 'rgba(90,214,255,0.35)';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(90,214,255,0.18)';
+  ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.arc(t.x, t.y, t.r + 8, 0, TWO_PI);
+  ctx.arc(t.x, t.y, t.r + 10, 0, TWO_PI);
   ctx.stroke();
+  if (xpPct > 0) {
+    ctx.strokeStyle = '#5ad6ff';
+    ctx.shadowColor = '#5ad6ff';
+    ctx.shadowBlur = 10;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, t.r + 10, -Math.PI / 2, -Math.PI / 2 + TWO_PI * xpPct);
+    ctx.stroke();
+  }
   ctx.restore();
+
   // body
   ctx.save();
   ctx.fillStyle = '#0c1430';
@@ -493,6 +711,14 @@ function render() {
   ctx.beginPath();
   ctx.arc(t.x, t.y, 5, 0, TWO_PI);
   ctx.fill();
+  ctx.restore();
+  // level label
+  ctx.save();
+  ctx.fillStyle = '#0a1226';
+  ctx.font = '800 11px -apple-system,sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`Lv.${t.level}`, t.x, t.y);
   ctx.restore();
 }
 
