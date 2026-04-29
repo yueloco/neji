@@ -134,6 +134,12 @@ const META_UPGRADES = [
   { id:'startlv',ico:'⇧', name:'先制強化',  desc:'ラン開始時にLvを+1',
     max:3,  cost:lv => 120 + lv * 80,
     apply:(lv, _t, g) => { g.pendingLevelUps += lv; } },
+  { id:'reroll', ico:'⟲', name:'リロール所持', desc:'ラン開始時のリロール +1/Lv',
+    max:5,  cost:lv => 90 + lv * 50,
+    apply:(lv, _t, g) => { g.rerollsLeft += lv; } },
+  { id:'orbital',ico:'◯', name:'初期ドローン', desc:'ラン開始時に周回ドローン +1',
+    max:2,  cost:lv => 200 + lv * 150,
+    apply:(lv, t) => { t.orbitalCount += lv; } },
 ];
 
 function metaLv(id)  { return meta.upgrades[id] || 0; }
@@ -165,37 +171,48 @@ const ENEMY_TYPES = {
               ranged:true, keepDist:200, shotCd:1.6, projSpeed:210, projDmg:1 },
   boss:     { color:'#ff3a3a', r:54, hp:90, speed:22,  damage:5, score:300, boss:true,
               shotCd:1.1,  projSpeed:230, projDmg:1, multishot:5, spread:0.5 },
+  charger:  { color:'#ffaa3a', r:46, hp:130, speed:55, damage:6, score:340, boss:true },
+  artillery:{ color:'#a06eff', r:60, hp:110, speed:14, damage:4, score:360, boss:true,
+              shotCd:1.6,  projSpeed:170, projDmg:1, multishot:9, spread:1.4, keepDist:260 },
 };
 
 // ---------- Run-only upgrades (chosen at level up) ----------
 // rarity:  common(60%) / rare(30%) / epic(10%)
 const RUN_UPGRADES = [
-  { id:'damage',  ico:'⚔', name:'火力上昇',     desc:'ダメージ +25%',         max:8, rar:'common',
-    apply: t => { t.damage *= 1.25; } },
-  { id:'fire',    ico:'⚡', name:'連射速度',     desc:'攻撃間隔 -18%',         max:8, rar:'common',
-    apply: t => { t.fireInterval *= 0.82; } },
-  { id:'speed',   ico:'➹', name:'弾速強化',     desc:'弾速 +30%',             max:5, rar:'common',
-    apply: t => { t.bulletSpeed *= 1.30; } },
-  { id:'pierce',  ico:'➤', name:'貫通弾',       desc:'弾が +1 体貫通',        max:5, rar:'rare',
+  { id:'damage',  ico:'⚔', name:'火力上昇',     desc:'ダメージ +22%',          max:20, rar:'common',
+    apply: t => { t.damage *= 1.22; } },
+  { id:'fire',    ico:'⚡', name:'連射速度',     desc:'攻撃間隔 -14%',          max:15, rar:'common',
+    apply: t => { t.fireInterval *= 0.86; } },
+  { id:'speed',   ico:'➹', name:'弾速強化',     desc:'弾速 +25%',             max:10, rar:'common',
+    apply: t => { t.bulletSpeed *= 1.25; } },
+  { id:'pierce',  ico:'➤', name:'貫通弾',       desc:'弾が +1 体貫通',         max:10, rar:'rare',
     apply: t => { t.pierce += 1; } },
-  { id:'multi',   ico:'⋘', name:'マルチショット', desc:'同時発射 +1',           max:3, rar:'rare',
+  { id:'multi',   ico:'⋘', name:'マルチショット', desc:'同時発射 +1',            max:6,  rar:'rare',
     apply: t => { t.multishot += 1; } },
-  { id:'crit',    ico:'✦', name:'クリ率',       desc:'クリティカル率 +15%',    max:6, rar:'common',
-    apply: t => { t.critChance += 0.15; } },
-  { id:'critdmg', ico:'✸', name:'クリ倍率',     desc:'クリ倍率 +0.6x',         max:4, rar:'rare',
-    apply: t => { t.critMul += 0.6; } },
-  { id:'maxhp',   ico:'♥', name:'装甲増設',     desc:'最大HP +1（全回復）',   max:5, rar:'common',
+  { id:'crit',    ico:'✦', name:'クリ率',       desc:'クリティカル率 +12%',    max:10, rar:'common',
+    apply: t => { t.critChance += 0.12; } },
+  { id:'critdmg', ico:'✸', name:'クリ倍率',     desc:'クリ倍率 +0.5x',         max:8,  rar:'rare',
+    apply: t => { t.critMul += 0.5; } },
+  { id:'maxhp',   ico:'♥', name:'装甲増設',     desc:'最大HP +1（全回復）',   max:12, rar:'common',
     apply: t => { t.maxHp += 1; t.hp = t.maxHp; } },
-  { id:'regen',   ico:'✚', name:'自己修復',     desc:'HP 自動回復 +0.25/秒', max:4, rar:'rare',
-    apply: t => { t.regen += 0.25; } },
-  { id:'magnet',  ico:'⌬', name:'磁場拡張',     desc:'XP回収範囲 +50%',       max:5, rar:'common',
+  { id:'regen',   ico:'✚', name:'自己修復',     desc:'HP 自動回復 +0.2/秒',   max:10, rar:'rare',
+    apply: t => { t.regen += 0.2; } },
+  { id:'magnet',  ico:'⌬', name:'磁場拡張',     desc:'XP回収範囲 +50%',        max:8,  rar:'common',
     apply: t => { t.magnetRange *= 1.5; } },
-  { id:'xp',      ico:'★', name:'熟達',         desc:'EXP取得 +25%',          max:5, rar:'common',
-    apply: (_, g) => { g.xpMul *= 1.25; } },
-  { id:'leech',   ico:'◍', name:'吸命',         desc:'撃破毎に HP +0.1（蓄積）', max:3, rar:'epic',
-    apply: t => { t.lifesteal += 0.10; } },
-  { id:'slow',    ico:'❄', name:'氷結弾',       desc:'被弾敵を 30% 1.2秒スロウ', max:3, rar:'epic',
-    apply: t => { t.slowOnHit = Math.max(t.slowOnHit, 0.30); } },
+  { id:'xp',      ico:'★', name:'熟達',         desc:'EXP取得 +20%',           max:10, rar:'common',
+    apply: (_, g) => { g.xpMul *= 1.20; } },
+  { id:'leech',   ico:'◍', name:'吸命',         desc:'撃破毎に HP +0.08（蓄積）', max:6,  rar:'epic',
+    apply: t => { t.lifesteal += 0.08; } },
+  { id:'slow',    ico:'❄', name:'氷結弾',       desc:'被弾敵を +10% スロウ',     max:6,  rar:'epic',
+    apply: t => { t.slowOnHit = Math.min(0.7, t.slowOnHit + 0.10); } },
+  { id:'orbital', ico:'◯', name:'周回ドローン',  desc:'コア周囲を周回する自動攻撃 +1', max:4, rar:'epic',
+    apply: t => { t.orbitalCount += 1; rebuildDrones(); } },
+  { id:'explode', ico:'✺', name:'爆発弾',       desc:'命中時に小範囲爆発 +1',   max:5,  rar:'epic',
+    apply: t => { t.explosive += 1; } },
+  { id:'chain',   ico:'⌁', name:'連鎖雷',       desc:'弾が他の敵に飛び火 +1',   max:5,  rar:'epic',
+    apply: t => { t.chain += 1; } },
+  { id:'bossdmg', ico:'☠', name:'ボス特効',     desc:'ボスへのダメージ +30%',   max:5,  rar:'rare',
+    apply: t => { t.bossDamage *= 1.30; } },
 ];
 
 const RAR_WEIGHT = { common:60, rare:30, epic:10 };
@@ -235,11 +252,14 @@ function applyUpgrade(u) {
 function rollWave(wave) {
   const queue = [];
   if (wave % 5 === 0) {
-    // boss wave: 1 boss + a stream of small minions
-    queue.push({ type:'boss', delay:1.2 });
+    // boss wave: rotate variants every 5 waves
+    const bossPool = ['boss', 'charger', 'artillery'];
+    const bossType = bossPool[((wave / 5 | 0) - 1) % bossPool.length];
+    queue.push({ type: bossType, delay:1.2 });
     const minionCount = 4 + Math.floor(wave / 5) * 2;
+    const minionPool = wave >= 15 ? ['grunt','fast','splitter'] : ['grunt','fast'];
     for (let i = 0; i < minionCount; i++) {
-      queue.push({ type: pick(['grunt','fast']), delay: 1.6 + i * 0.7 });
+      queue.push({ type: pick(minionPool), delay: 1.6 + i * 0.7 });
     }
     return queue;
   }
@@ -336,11 +356,17 @@ function newGame() {
       slowOnHit: 0,
       regen: 0,
       regenAcc: 0,
+      orbitalCount: 0,
+      explosive: 0,
+      chain: 0,
+      bossDamage: 1,
     },
     enemies: [],
     bullets: [],
     enemyShots: [],
     gems: [],
+    drones: [],
+    chainLines: [],
     particles: [],
     dmgTexts: [],
     shake: 0,
@@ -352,8 +378,11 @@ function newGame() {
     pendingLevelUps: 0,
     upgrades: {},
     xpMul: 1,
+    rerollsLeft: 0,
+    bossesKilled: 0,
   };
   applyMetaToRun(game);
+  rebuildDrones();
   mode = 'playing';
   paused = false;
   hideOverlay();
@@ -408,6 +437,30 @@ function spawnEnemy(type, originAngle) {
   });
 
   if (cfg.boss) { showBanner('!!  BOSS  !!', `WAVE ${wave}`); Sfx.bossWarn(); }
+}
+
+function rebuildDrones() {
+  const t = game.tower;
+  const n = t.orbitalCount | 0;
+  // preserve existing angles when adding new drones
+  const existing = game.drones.length;
+  if (n === existing) return;
+  if (n < existing) {
+    game.drones.length = n;
+    return;
+  }
+  // grow: redistribute angles evenly
+  game.drones = [];
+  for (let i = 0; i < n; i++) {
+    game.drones.push({
+      angle: (i / n) * TWO_PI,
+      dist: 70,
+      r: 7,
+      orbitSpeed: 2.6,
+      hitTimer: new Map(),
+      x: 0, y: 0,
+    });
+  }
 }
 
 function spawnGem(x, y, value) {
@@ -524,6 +577,8 @@ function update(dt) {
       if (dx*dx + dy*dy <= rr*rr) {
         applyDamage(e, b.damage, b.crit);
         if (t.slowOnHit > 0) applySlow(e, t.slowOnHit, 1.2);
+        if (t.explosive > 0) doExplosion(e.x, e.y, b.damage, t.explosive);
+        if (t.chain > 0) doChain(e, b.damage, t.chain);
         if (b.pierce > 0) {
           b.pierce--;
           if (!b.hits) b.hits = new Set();
@@ -629,6 +684,37 @@ function update(dt) {
   }
   g.gems = g.gems.filter(gm => !gm.dead);
 
+  // ----- Orbital drones -----
+  for (const dr of g.drones) {
+    dr.angle += dr.orbitSpeed * dt;
+    dr.x = t.x + Math.cos(dr.angle) * dr.dist;
+    dr.y = t.y + Math.sin(dr.angle) * dr.dist;
+    // tick cooldowns
+    for (const [k, v] of dr.hitTimer) {
+      const nv = v - dt;
+      if (nv <= 0) dr.hitTimer.delete(k);
+      else dr.hitTimer.set(k, nv);
+    }
+    // hit enemies
+    for (const e of g.enemies) {
+      if (e.dead || dr.hitTimer.has(e)) continue;
+      const ex = e.x - dr.x, ey = e.y - dr.y;
+      const rr = e.r + dr.r;
+      if (ex*ex + ey*ey <= rr*rr) {
+        applyDamage(e, t.damage * 0.6);
+        if (t.slowOnHit > 0) applySlow(e, t.slowOnHit, 1.0);
+        dr.hitTimer.set(e, 0.45);
+      }
+    }
+  }
+
+  // ----- Chain lines fade -----
+  for (const ln of g.chainLines) {
+    ln.life -= dt;
+    if (ln.life <= 0) ln.dead = true;
+  }
+  g.chainLines = g.chainLines.filter(ln => !ln.dead);
+
   // ----- Particles -----
   for (const p of g.particles) {
     p.life -= dt;
@@ -678,6 +764,7 @@ function update(dt) {
 }
 
 function applyDamage(e, dmg, isCrit) {
+  if (e.boss && game.tower.bossDamage > 1) dmg *= game.tower.bossDamage;
   let shieldAbsorbed = 0;
   if (e.shield > 0) {
     shieldAbsorbed = Math.min(e.shield, dmg);
@@ -709,6 +796,55 @@ function fmtDmg(v) {
 function applySlow(e, factor, dur) {
   e.slowFactor = factor;
   e.slowEnd = (e.slowEnd || 0) > 0 ? Math.max(e.slowEnd, dur) : dur;
+}
+
+function doExplosion(x, y, baseDmg, level) {
+  const radius = 36 + level * 16;
+  const dmg = baseDmg * (0.35 + level * 0.10);
+  for (const e of game.enemies) {
+    if (e.dead) continue;
+    const dx = e.x - x, dy = e.y - y;
+    if (dx*dx + dy*dy <= radius * radius) {
+      applyDamage(e, dmg);
+    }
+  }
+  // visual: ring + particles
+  spawnParticles(x, y, '#ffa05d', 10 + level * 2, [80, 220], [0.25, 0.5]);
+  game.chainLines.push({
+    kind: 'ring',
+    x, y,
+    r: radius,
+    life: 0.22, maxLife: 0.22,
+    dead: false,
+  });
+  addShake(2);
+}
+
+function doChain(srcEnemy, baseDmg, jumps) {
+  let last = srcEnemy;
+  let dmg = baseDmg * 0.55;
+  const seen = new Set([srcEnemy]);
+  const range = 180;
+  for (let i = 0; i < jumps; i++) {
+    let next = null, bestD = range * range;
+    for (const e of game.enemies) {
+      if (e.dead || seen.has(e)) continue;
+      const dx = e.x - last.x, dy = e.y - last.y;
+      const d2 = dx*dx + dy*dy;
+      if (d2 < bestD) { bestD = d2; next = e; }
+    }
+    if (!next) break;
+    applyDamage(next, dmg);
+    game.chainLines.push({
+      kind:'bolt',
+      x1:last.x, y1:last.y, x2:next.x, y2:next.y,
+      life:0.14, maxLife:0.14,
+      dead:false,
+    });
+    seen.add(next);
+    last = next;
+    dmg *= 0.75;
+  }
 }
 
 function onEnemyKilled(e) {
@@ -769,16 +905,21 @@ function addXp(amount) {
 function showLevelUp() {
   if (mode !== 'playing') return;
   mode = 'levelup';
+  Sfx.levelUp();
+  spawnParticles(game.tower.x, game.tower.y, '#5ad6ff', 30, [120, 320], [0.4, 0.9]);
+  addShake(5);
+  renderLevelUpCards();
+}
+
+function renderLevelUpCards() {
   const cards = rollLevelUpCards();
   if (!cards.length) {
     // nothing left to pick — just consume
     game.pendingLevelUps = 0;
     mode = 'playing';
+    overlay.classList.add('hidden');
     return;
   }
-  Sfx.levelUp();
-  spawnParticles(game.tower.x, game.tower.y, '#5ad6ff', 30, [120, 320], [0.4, 0.9]);
-  addShake(5);
 
   overlay.classList.remove('hidden');
   overlayTitle.textContent = 'LEVEL UP';
@@ -787,7 +928,6 @@ function showLevelUp() {
   overlayMain.style.display = 'none';
   overlaySub.style.display  = 'none';
 
-  // build cards container
   let cw = overlayStats.parentNode.querySelector('.cards-wrap');
   if (cw) cw.remove();
   cw = document.createElement('div');
@@ -807,6 +947,18 @@ function showLevelUp() {
     cw.appendChild(el);
   });
   overlayStats.parentNode.insertBefore(cw, overlayStats.nextSibling);
+
+  // reroll button as overlaySub
+  overlaySub.style.display = '';
+  overlaySub.textContent = `リロール (${game.rerollsLeft})`;
+  overlaySub.disabled = game.rerollsLeft <= 0;
+  overlaySub.style.opacity = overlaySub.disabled ? 0.4 : 1;
+  overlaySub.onclick = () => {
+    if (game.rerollsLeft <= 0) return;
+    game.rerollsLeft--;
+    Sfx.coin();
+    renderLevelUpCards();
+  };
 }
 
 function pickUpgrade(u) {
@@ -815,6 +967,8 @@ function pickUpgrade(u) {
   const cw = document.querySelector('.cards-wrap');
   if (cw) cw.remove();
   overlayMain.style.display = '';
+  overlaySub.disabled = false;
+  overlaySub.style.opacity = 1;
   overlay.classList.add('hidden');
   game.pendingLevelUps--;
   mode = 'playing';
@@ -964,6 +1118,62 @@ function render() {
   // tower
   drawTower();
 
+  // orbital drones
+  for (const dr of game.drones) {
+    ctx.save();
+    ctx.fillStyle = '#a8f0ff';
+    ctx.shadowColor = '#5ad6ff';
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(dr.x, dr.y, dr.r, 0, TWO_PI);
+    ctx.fill();
+    // small trail dot
+    ctx.globalAlpha = 0.45;
+    ctx.beginPath();
+    ctx.arc(
+      game.tower.x + Math.cos(dr.angle - 0.25) * dr.dist,
+      game.tower.y + Math.sin(dr.angle - 0.25) * dr.dist,
+      dr.r * 0.55, 0, TWO_PI
+    );
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // chain lightning + explosion rings
+  for (const ln of game.chainLines) {
+    const k = Math.max(0, ln.life / ln.maxLife);
+    ctx.save();
+    if (ln.kind === 'bolt') {
+      ctx.strokeStyle = '#a8f0ff';
+      ctx.shadowColor = '#5ad6ff';
+      ctx.shadowBlur = 14;
+      ctx.lineWidth = 2 + k * 2;
+      ctx.globalAlpha = 0.4 + k * 0.6;
+      // jagged line
+      ctx.beginPath();
+      const seg = 5;
+      for (let i = 0; i <= seg; i++) {
+        const f = i / seg;
+        const px = ln.x1 + (ln.x2 - ln.x1) * f;
+        const py = ln.y1 + (ln.y2 - ln.y1) * f;
+        const j = (i === 0 || i === seg) ? 0 : (Math.random() - 0.5) * 12;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px + j, py + j);
+      }
+      ctx.stroke();
+    } else if (ln.kind === 'ring') {
+      ctx.strokeStyle = '#ffa05d';
+      ctx.shadowColor = '#ffa05d';
+      ctx.shadowBlur = 18;
+      ctx.lineWidth = 2 + k * 3;
+      ctx.globalAlpha = k;
+      ctx.beginPath();
+      ctx.arc(ln.x, ln.y, ln.r * (1.05 - k * 0.4), 0, TWO_PI);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   // particles (above entities)
   for (const p of game.particles) {
     const k = Math.max(0, p.life / p.maxLife);
@@ -1020,7 +1230,7 @@ function render() {
   ctx.font = '700 10px -apple-system,sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'bottom';
-  ctx.fillText('v4 — gem-magnet fix', 8, H - 6);
+  ctx.fillText('v5 — endless expansion', 8, H - 6);
   ctx.restore();
 }
 
@@ -1121,8 +1331,8 @@ function drawEnemy(e) {
     // square
     ctx.fillStyle = baseFill;
     ctx.fillRect(e.x - e.r, e.y - e.r, e.r * 2, e.r * 2);
-  } else if (e.kind === 'boss') {
-    // ring + body
+  } else if (e.boss) {
+    // boss: body + outer ring + inner core
     ctx.fillStyle = baseFill;
     ctx.beginPath();
     ctx.arc(e.x, e.y, e.r, 0, TWO_PI);
