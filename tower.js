@@ -1013,6 +1013,15 @@ function render() {
     ctx.fillText('⏸ ボタンで再開', CX, CY + 22);
     ctx.restore();
   }
+
+  // version stamp (lets us confirm fresh code is loaded)
+  ctx.save();
+  ctx.fillStyle = 'rgba(141,155,191,0.6)';
+  ctx.font = '700 10px -apple-system,sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('v4 — gem-magnet fix', 8, H - 6);
+  ctx.restore();
 }
 
 function drawTower() {
