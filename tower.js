@@ -1,12 +1,80 @@
 'use strict';
 /* ============================================================
- * CORE DEFENSE — Step4: level-up 3-card chooser + run upgrades
+ * CORE DEFENSE — Step5: permanent meta upgrades + save/load
  * ============================================================ */
 (() => {
 
 const TWO_PI = Math.PI * 2;
+const SAVE_KEY = 'core-defense-meta-v1';
 const rand   = (a, b) => a + Math.random() * (b - a);
 const pick   = arr => arr[(Math.random() * arr.length) | 0];
+
+// ---------- Persistent meta progress ----------
+function defaultMeta() {
+  return { points: 0, lifeKills: 0, bestWave: 0, totalRuns: 0, upgrades: {} };
+}
+function loadMeta() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return defaultMeta();
+    return Object.assign(defaultMeta(), JSON.parse(raw));
+  } catch { return defaultMeta(); }
+}
+function saveMeta() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(meta)); } catch {}
+}
+let meta = loadMeta();
+
+// ---------- Meta upgrades (permanent across runs) ----------
+const META_UPGRADES = [
+  { id:'dmg',    ico:'⚔', name:'初期火力',  desc:'開始時ダメージ +5%/Lv',
+    max:20, cost:lv => 30 + lv * 18,
+    apply:(lv, t) => { t.damage *= 1 + 0.05 * lv; } },
+  { id:'rate',   ico:'⚡', name:'初期連射',  desc:'開始時 攻撃間隔 -3%/Lv',
+    max:15, cost:lv => 40 + lv * 22,
+    apply:(lv, t) => { t.fireInterval *= Math.pow(0.97, lv); } },
+  { id:'hp',     ico:'♥', name:'コア強度',  desc:'最大HP +1/Lv',
+    max:10, cost:lv => 60 + lv * 38,
+    apply:(lv, t) => { t.maxHp += lv; t.hp = t.maxHp; } },
+  { id:'speed',  ico:'➹', name:'弾速',     desc:'弾速 +5%/Lv',
+    max:10, cost:lv => 30 + lv * 14,
+    apply:(lv, t) => { t.bulletSpeed *= 1 + 0.05 * lv; } },
+  { id:'crit',   ico:'✦', name:'初期クリ率', desc:'クリ率 +2%/Lv',
+    max:8,  cost:lv => 50 + lv * 22,
+    apply:(lv, t) => { t.critChance += 0.02 * lv; } },
+  { id:'regen',  ico:'✚', name:'自己修復',  desc:'HP回復 +0.05/秒 /Lv',
+    max:10, cost:lv => 70 + lv * 30,
+    apply:(lv, t) => { t.regen += 0.05 * lv; } },
+  { id:'magnet', ico:'⌬', name:'磁場',     desc:'XP回収範囲 +20%/Lv',
+    max:5,  cost:lv => 40 + lv * 18,
+    apply:(lv, t) => { t.magnetRange *= 1 + 0.20 * lv; } },
+  { id:'xp',     ico:'★', name:'熟練',     desc:'EXP取得 +6%/Lv',
+    max:10, cost:lv => 50 + lv * 24,
+    apply:(lv, t, g) => { g.xpMul *= 1 + 0.06 * lv; } },
+  { id:'meta',   ico:'◆', name:'勲章',     desc:'終了時メタ点 +10%/Lv',
+    max:10, cost:lv => 80 + lv * 36,
+    apply:(lv, _t, g) => { g.metaMul *= 1 + 0.10 * lv; } },
+  { id:'startlv',ico:'⇧', name:'先制強化',  desc:'ラン開始時にLvを+1',
+    max:3,  cost:lv => 120 + lv * 80,
+    apply:(lv, _t, g) => { g.pendingLevelUps += lv; } },
+];
+
+function metaLv(id)  { return meta.upgrades[id] || 0; }
+function metaCost(u) { return u.cost(metaLv(u.id)); }
+
+function applyMetaToRun(g) {
+  g.metaMul = 1;
+  for (const u of META_UPGRADES) {
+    const lv = metaLv(u.id);
+    if (lv > 0) u.apply(lv, g.tower, g);
+  }
+}
+
+function runEndPoints(g) {
+  // (wave-1 * 8 + kills * 0.4) * metaMul, floored.
+  const base = Math.max(0, (g.wave - 1) * 8 + g.kills * 0.4);
+  return Math.max(0, Math.floor(base * (g.metaMul || 1)));
+}
 
 // ---------- Enemy archetypes ----------
 // hp/speed scale with wave; baseline values here are for wave 1.
@@ -208,6 +276,7 @@ function newGame() {
     upgrades: {},
     xpMul: 1,
   };
+  applyMetaToRun(game);
   mode = 'playing';
   paused = false;
   hideOverlay();
@@ -215,6 +284,10 @@ function newGame() {
   if (banner.parentNode !== stageWrap) stageWrap.appendChild(banner);
   showBanner(`WAVE 1`, '迎撃開始');
   updateHud();
+  // pending startlv level-ups: open the chooser shortly
+  if (game.pendingLevelUps > 0) {
+    setTimeout(() => { if (mode === 'playing') showLevelUp(); }, 600);
+  }
 }
 
 // ---------- Enemy spawn ----------
@@ -1015,19 +1088,92 @@ function updateHud() {
 }
 
 // ---------- Overlay ----------
+function clearShopUI() {
+  const cw = document.querySelector('.cards-wrap');     if (cw) cw.remove();
+  const sl = document.querySelector('.shop-list');      if (sl) sl.remove();
+  const sh = document.querySelector('.shop-head');      if (sh) sh.remove();
+  // restore third button container if any (none in HTML)
+}
+
 function showTitle() {
   mode = 'title';
+  clearShopUI();
   overlay.classList.remove('hidden');
   overlayTitle.textContent = 'CORE DEFENSE';
   overlayText.textContent  = '中央コアを守れ。360°から押し寄せる敵を自動で迎撃する。';
-  overlayStats.innerHTML   = '';
+  overlayStats.innerHTML = `
+    <div class="stat"><div class="label">メタ点</div><div class="val">${meta.points}</div></div>
+    <div class="stat"><div class="label">最高WAVE</div><div class="val">${meta.bestWave}</div></div>
+    <div class="stat"><div class="label">累計撃破</div><div class="val">${meta.lifeKills}</div></div>
+  `;
   overlayMain.textContent  = 'スタート';
-  overlaySub.style.display = 'none';
+  overlayMain.style.display = '';
+  overlaySub.style.display  = '';
+  overlaySub.textContent    = '永続強化';
   overlayMain.onclick = () => newGame();
+  overlaySub.onclick  = () => showShop();
+}
+
+function showShop() {
+  mode = 'shop';
+  clearShopUI();
+  overlay.classList.remove('hidden');
+  overlayTitle.textContent = '永続強化';
+  overlayText.textContent  = '撃破点で永続的にコアを底上げする';
+  overlayStats.innerHTML   = '';
+
+  const head = document.createElement('div');
+  head.className = 'shop-head';
+  head.innerHTML = `<span>累計撃破: <b>${meta.lifeKills}</b> / 最高WAVE: <b>${meta.bestWave}</b></span>
+    <span class="shop-coin">◆ ${meta.points}</span>`;
+  overlayStats.parentNode.insertBefore(head, overlayStats);
+
+  const list = document.createElement('div');
+  list.className = 'shop-list';
+  for (const u of META_UPGRADES) {
+    const lv = metaLv(u.id);
+    const isMax = lv >= u.max;
+    const cost  = isMax ? 0 : metaCost(u);
+    const row = document.createElement('div');
+    row.className = 'shop-row' + (isMax ? ' maxed' : '');
+    row.innerHTML = `
+      <div class="top"><span class="nm">${u.ico} ${u.name}</span><span class="lv">${lv}/${u.max}</span></div>
+      <div class="ds">${u.desc}</div>
+      ${isMax
+        ? `<div class="lv" style="text-align:right">MAX</div>`
+        : `<button class="buy" ${meta.points < cost ? 'disabled' : ''}>◆ ${cost}</button>`}
+    `;
+    if (!isMax) {
+      row.querySelector('.buy').addEventListener('click', () => {
+        if (meta.points < cost) return;
+        meta.points -= cost;
+        meta.upgrades[u.id] = lv + 1;
+        saveMeta();
+        showShop();
+      });
+    }
+    list.appendChild(row);
+  }
+  overlayStats.parentNode.insertBefore(list, overlayStats.nextSibling);
+
+  overlayMain.style.display = 'none';
+  overlaySub.style.display  = '';
+  overlaySub.textContent    = '戻る';
+  overlaySub.onclick = () => showTitle();
 }
 
 function gameOver() {
+  if (mode === 'gameover') return;
   mode = 'gameover';
+  clearShopUI();
+  // accumulate stats
+  meta.lifeKills += game.kills;
+  meta.totalRuns = (meta.totalRuns || 0) + 1;
+  if (game.wave > meta.bestWave) meta.bestWave = game.wave;
+  const earned = runEndPoints(game);
+  meta.points += earned;
+  saveMeta();
+
   overlay.classList.remove('hidden');
   overlayTitle.textContent = 'GAME OVER';
   overlayText.textContent  = 'コアが破壊された';
@@ -1035,12 +1181,14 @@ function gameOver() {
     <div class="stat"><div class="label">WAVE</div><div class="val">${game.wave}</div></div>
     <div class="stat"><div class="label">KILLS</div><div class="val">${game.kills}</div></div>
     <div class="stat"><div class="label">SCORE</div><div class="val">${game.score}</div></div>
+    <div class="stat"><div class="label">獲得◆</div><div class="val">+${earned}</div></div>
   `;
   overlayMain.textContent  = 'もう一度';
+  overlayMain.style.display = '';
   overlaySub.style.display = '';
-  overlaySub.textContent   = 'タイトルへ';
+  overlaySub.textContent   = '永続強化';
   overlayMain.onclick = () => newGame();
-  overlaySub.onclick  = () => showTitle();
+  overlaySub.onclick  = () => showShop();
 }
 
 function hideOverlay() { overlay.classList.add('hidden'); }
