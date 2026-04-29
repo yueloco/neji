@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0b0f1a">
 <title>CORE DEFENSE ― 360°タワーディフェンス</title>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="tower.css">
+<link rel="stylesheet" href="tower.css?v=3">
 </head>
 <body>
 <div id="app">
@@ -52,6 +52,18 @@
   </div>
 
 </div>
-<script src="tower.js"></script>
+<script>
+  // Unregister any stale service worker cached from a previous visit so
+  // tower.js / tower.css / tower.html updates always reach the browser.
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(regs => {
+      regs.forEach(r => r.unregister());
+    });
+    if (window.caches && caches.keys) {
+      caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+    }
+  }
+</script>
+<script src="tower.js?v=3"></script>
 </body>
 </html>
