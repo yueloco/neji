@@ -1,6 +1,6 @@
 'use strict';
 /* ============================================================
- * CORE DEFENSE — Step3: XP gems, damage numbers, particles, shake
+ * CORE DEFENSE — Step4: level-up 3-card chooser + run upgrades
  * ============================================================ */
 (() => {
 
@@ -21,6 +21,70 @@ const ENEMY_TYPES = {
   boss:     { color:'#ff3a3a', r:54, hp:90, speed:22,  damage:5, score:300, boss:true,
               shotCd:1.1,  projSpeed:230, projDmg:1, multishot:5, spread:0.5 },
 };
+
+// ---------- Run-only upgrades (chosen at level up) ----------
+// rarity:  common(60%) / rare(30%) / epic(10%)
+const RUN_UPGRADES = [
+  { id:'damage',  ico:'⚔', name:'火力上昇',     desc:'ダメージ +25%',         max:8, rar:'common',
+    apply: t => { t.damage *= 1.25; } },
+  { id:'fire',    ico:'⚡', name:'連射速度',     desc:'攻撃間隔 -18%',         max:8, rar:'common',
+    apply: t => { t.fireInterval *= 0.82; } },
+  { id:'speed',   ico:'➹', name:'弾速強化',     desc:'弾速 +30%',             max:5, rar:'common',
+    apply: t => { t.bulletSpeed *= 1.30; } },
+  { id:'pierce',  ico:'➤', name:'貫通弾',       desc:'弾が +1 体貫通',        max:5, rar:'rare',
+    apply: t => { t.pierce += 1; } },
+  { id:'multi',   ico:'⋘', name:'マルチショット', desc:'同時発射 +1',           max:3, rar:'rare',
+    apply: t => { t.multishot += 1; } },
+  { id:'crit',    ico:'✦', name:'クリ率',       desc:'クリティカル率 +15%',    max:6, rar:'common',
+    apply: t => { t.critChance += 0.15; } },
+  { id:'critdmg', ico:'✸', name:'クリ倍率',     desc:'クリ倍率 +0.6x',         max:4, rar:'rare',
+    apply: t => { t.critMul += 0.6; } },
+  { id:'maxhp',   ico:'♥', name:'装甲増設',     desc:'最大HP +1（全回復）',   max:5, rar:'common',
+    apply: t => { t.maxHp += 1; t.hp = t.maxHp; } },
+  { id:'regen',   ico:'✚', name:'自己修復',     desc:'HP 自動回復 +0.25/秒', max:4, rar:'rare',
+    apply: t => { t.regen += 0.25; } },
+  { id:'magnet',  ico:'⌬', name:'磁場拡張',     desc:'XP回収範囲 +50%',       max:5, rar:'common',
+    apply: t => { t.magnetRange *= 1.5; } },
+  { id:'xp',      ico:'★', name:'熟達',         desc:'EXP取得 +25%',          max:5, rar:'common',
+    apply: (_, g) => { g.xpMul *= 1.25; } },
+  { id:'leech',   ico:'◍', name:'吸命',         desc:'撃破毎に HP +0.1（蓄積）', max:3, rar:'epic',
+    apply: t => { t.lifesteal += 0.10; } },
+  { id:'slow',    ico:'❄', name:'氷結弾',       desc:'被弾敵を 30% 1.2秒スロウ', max:3, rar:'epic',
+    apply: t => { t.slowOnHit = Math.max(t.slowOnHit, 0.30); } },
+];
+
+const RAR_WEIGHT = { common:60, rare:30, epic:10 };
+
+function rollLevelUpCards() {
+  const taken = game.upgrades;
+  const pool = RUN_UPGRADES.filter(u => (taken[u.id] || 0) < u.max);
+  const choices = [];
+  const exclude = new Set();
+  for (let i = 0; i < 3 && pool.length > exclude.size; i++) {
+    let total = 0;
+    for (const u of pool) {
+      if (exclude.has(u.id)) continue;
+      total += RAR_WEIGHT[u.rar] || 10;
+    }
+    let r = Math.random() * total;
+    for (const u of pool) {
+      if (exclude.has(u.id)) continue;
+      const w = RAR_WEIGHT[u.rar] || 10;
+      if ((r -= w) <= 0) {
+        choices.push(u);
+        exclude.add(u.id);
+        break;
+      }
+    }
+  }
+  return choices;
+}
+
+function applyUpgrade(u) {
+  const t = game.tower;
+  u.apply(t, game);
+  game.upgrades[u.id] = (game.upgrades[u.id] || 0) + 1;
+}
 
 // Enemy type unlocked at given wave (boss handled separately every 5 waves).
 function rollWave(wave) {
@@ -118,6 +182,15 @@ function newGame() {
       xp: 0,
       xpToNext: 6,
       magnetRange: 110,
+      pierce: 0,
+      multishot: 1,
+      spreadAngle: 0.10,
+      critChance: 0.05,
+      critMul: 1.8,
+      lifesteal: 0,
+      slowOnHit: 0,
+      regen: 0,
+      regenAcc: 0,
     },
     enemies: [],
     bullets: [],
@@ -132,6 +205,8 @@ function newGame() {
     betweenWaves: 0,
     flash: 0,
     pendingLevelUps: 0,
+    upgrades: {},
+    xpMul: 1,
   };
   mode = 'playing';
   paused = false;
@@ -294,11 +369,19 @@ function update(dt) {
     if (b.x < -50 || b.x > W + 50 || b.y < -50 || b.y > H + 50) { b.dead = true; continue; }
     for (const e of g.enemies) {
       if (e.dead) continue;
+      if (b.hits && b.hits.has(e)) continue;
       const dx = e.x - b.x, dy = e.y - b.y;
       const rr = e.r + b.r;
       if (dx*dx + dy*dy <= rr*rr) {
-        applyDamage(e, b.damage);
-        b.dead = true;
+        applyDamage(e, b.damage, b.crit);
+        if (t.slowOnHit > 0) applySlow(e, t.slowOnHit, 1.2);
+        if (b.pierce > 0) {
+          b.pierce--;
+          if (!b.hits) b.hits = new Set();
+          b.hits.add(e);
+        } else {
+          b.dead = true;
+        }
         break;
       }
     }
@@ -327,6 +410,13 @@ function update(dt) {
     const d  = Math.hypot(dx, dy) || 1;
     const ang = Math.atan2(dy, dx);
 
+    // slow effect
+    if (e.slowEnd > 0) {
+      e.slowEnd -= dt;
+      if (e.slowEnd <= 0) e.slowFactor = 0;
+    }
+    const speed = e.speed * (1 - (e.slowFactor || 0));
+
     // ranged & boss: keep distance
     let shouldMove = true;
     if ((e.ranged || e.boss) && e.keepDist > 0 && d <= e.keepDist + 4) {
@@ -335,8 +425,8 @@ function update(dt) {
       shouldMove = false;
     }
     if (shouldMove) {
-      e.x += (dx / d) * e.speed * dt;
-      e.y += (dy / d) * e.speed * dt;
+      e.x += (dx / d) * speed * dt;
+      e.y += (dy / d) * speed * dt;
     }
     if (e.flash > 0) e.flash -= dt;
 
@@ -415,6 +505,16 @@ function update(dt) {
   // ----- Shake decay -----
   if (g.shake > 0) g.shake = Math.max(0, g.shake - dt * 24);
 
+  // ----- HP regen -----
+  if (t.regen > 0 && t.hp < t.maxHp) {
+    t.regenAcc += t.regen * dt;
+    while (t.regenAcc >= 1 && t.hp < t.maxHp) {
+      t.regenAcc -= 1;
+      t.hp = Math.min(t.maxHp, t.hp + 1);
+      spawnDamageNumber(t.x, t.y - t.r - 6, '+1', '#5dffa1', 13);
+    }
+  }
+
   // wave clear (queue empty AND no enemies on field)
   if (!g.waveCleared && g.waveQueue.length === 0 && g.enemies.length === 0) {
     g.waveCleared = true;
@@ -430,7 +530,7 @@ function update(dt) {
   updateHud();
 }
 
-function applyDamage(e, dmg) {
+function applyDamage(e, dmg, isCrit) {
   let shieldAbsorbed = 0;
   if (e.shield > 0) {
     shieldAbsorbed = Math.min(e.shield, dmg);
@@ -441,10 +541,12 @@ function applyDamage(e, dmg) {
   e.flash = 0.12;
   spawnParticles(e.x, e.y, e.color, 3, [60, 180], [0.18, 0.4]);
   if (shieldAbsorbed > 0) {
-    spawnDamageNumber(e.x, e.y - e.r * 0.5, shieldAbsorbed, '#9ed4ff', 11);
+    spawnDamageNumber(e.x, e.y - e.r * 0.5, fmtDmg(shieldAbsorbed), '#9ed4ff', 11);
   }
   if (dmg > 0) {
-    spawnDamageNumber(e.x, e.y - e.r * 0.7, dmg, '#fff7a8', 12);
+    const col = isCrit ? '#ffd24a' : '#fff7a8';
+    const sz  = isCrit ? 16 : 12;
+    spawnDamageNumber(e.x, e.y - e.r * 0.7, fmtDmg(dmg), col, sz);
   }
   if (e.hp <= 0) {
     e.dead = true;
@@ -452,9 +554,28 @@ function applyDamage(e, dmg) {
   }
 }
 
+function fmtDmg(v) {
+  return (v >= 10 ? Math.round(v) : v.toFixed(1)).toString();
+}
+
+function applySlow(e, factor, dur) {
+  e.slowFactor = factor;
+  e.slowEnd = (e.slowEnd || 0) > 0 ? Math.max(e.slowEnd, dur) : dur;
+}
+
 function onEnemyKilled(e) {
   game.kills++;
   game.score += e.score;
+  // lifesteal
+  const t = game.tower;
+  if (t.lifesteal > 0 && t.hp < t.maxHp) {
+    t.regenAcc += t.lifesteal;
+    while (t.regenAcc >= 1 && t.hp < t.maxHp) {
+      t.regenAcc -= 1;
+      t.hp = Math.min(t.maxHp, t.hp + 1);
+      spawnDamageNumber(t.x, t.y - t.r - 6, '+1', '#5dffa1', 13);
+    }
+  }
   // big particle burst + XP drop
   spawnParticles(e.x, e.y, e.color, e.boss ? 28 : 9, [80, 280], [0.35, 0.8]);
   if (e.boss) {
@@ -485,22 +606,68 @@ function damageCore(amount) {
 
 function addXp(amount) {
   const t = game.tower;
-  t.xp += amount;
+  t.xp += amount * (game.xpMul || 1);
   while (t.xp >= t.xpToNext) {
     t.xp -= t.xpToNext;
     t.level++;
     t.xpToNext = Math.round(6 + t.level * 4 + t.level * t.level * 0.5);
     game.pendingLevelUps++;
   }
-  if (game.pendingLevelUps > 0) onLevelUp();
+  if (game.pendingLevelUps > 0 && mode === 'playing') showLevelUp();
 }
 
-function onLevelUp() {
-  // Step 4 will replace this with a 3-card chooser; for now just feedback.
-  showBanner('LEVEL UP', `Lv.${game.tower.level}`);
+function showLevelUp() {
+  if (mode !== 'playing') return;
+  mode = 'levelup';
+  const cards = rollLevelUpCards();
+  if (!cards.length) {
+    // nothing left to pick — just consume
+    game.pendingLevelUps = 0;
+    mode = 'playing';
+    return;
+  }
   spawnParticles(game.tower.x, game.tower.y, '#5ad6ff', 30, [120, 320], [0.4, 0.9]);
   addShake(5);
+
+  overlay.classList.remove('hidden');
+  overlayTitle.textContent = 'LEVEL UP';
+  overlayText.textContent  = `Lv.${game.tower.level} へ到達 — 強化を1つ選択`;
+  overlayStats.innerHTML   = '';
+  overlayMain.style.display = 'none';
+  overlaySub.style.display  = 'none';
+
+  // build cards container
+  let cw = overlayStats.parentNode.querySelector('.cards-wrap');
+  if (cw) cw.remove();
+  cw = document.createElement('div');
+  cw.className = 'cards-wrap';
+  cards.forEach(u => {
+    const stack = game.upgrades[u.id] || 0;
+    const el = document.createElement('button');
+    el.className = 'card';
+    el.innerHTML = `
+      <span class="rar ${u.rar}">${u.rar.toUpperCase()}</span>
+      <span class="ico">${u.ico}</span>
+      <span class="name">${u.name}</span>
+      <span class="desc">${u.desc}</span>
+      <span class="stack">${stack}/${u.max}</span>
+    `;
+    el.addEventListener('click', () => pickUpgrade(u));
+    cw.appendChild(el);
+  });
+  overlayStats.parentNode.insertBefore(cw, overlayStats.nextSibling);
+}
+
+function pickUpgrade(u) {
+  applyUpgrade(u);
+  // cleanup card UI
+  const cw = document.querySelector('.cards-wrap');
+  if (cw) cw.remove();
+  overlayMain.style.display = '';
+  overlay.classList.add('hidden');
   game.pendingLevelUps--;
+  mode = 'playing';
+  if (game.pendingLevelUps > 0) showLevelUp();
 }
 
 function spawnChild(parent, angle, off) {
@@ -521,19 +688,28 @@ function spawnChild(parent, angle, off) {
 }
 
 function fireBullet(t, target) {
-  const dx = target.x - t.x, dy = target.y - t.y;
-  const d  = Math.hypot(dx, dy) || 1;
-  const sp = t.bulletSpeed;
-  game.bullets.push({
-    x: t.x + (dx/d) * (t.r + 2),
-    y: t.y + (dy/d) * (t.r + 2),
-    vx: (dx/d) * sp,
-    vy: (dy/d) * sp,
-    r: t.bulletRadius,
-    damage: t.damage,
-    life: 2.0,
-    dead: false,
-  });
+  const baseAng = Math.atan2(target.y - t.y, target.x - t.x);
+  const n = Math.max(1, t.multishot | 0);
+  for (let i = 0; i < n; i++) {
+    const t01 = (n === 1) ? 0 : (i / (n - 1)) - 0.5;
+    const ang = baseAng + t01 * t.spreadAngle * (n - 1);
+    const isCrit = Math.random() < t.critChance;
+    const dmg = t.damage * (isCrit ? t.critMul : 1);
+    const sp = t.bulletSpeed;
+    game.bullets.push({
+      x: t.x + Math.cos(ang) * (t.r + 2),
+      y: t.y + Math.sin(ang) * (t.r + 2),
+      vx: Math.cos(ang) * sp,
+      vy: Math.sin(ang) * sp,
+      r: t.bulletRadius,
+      damage: dmg,
+      crit: isCrit,
+      pierce: t.pierce | 0,
+      hits: null, // assigned on demand
+      life: 2.0,
+      dead: false,
+    });
+  }
 }
 
 function nextWave() {
