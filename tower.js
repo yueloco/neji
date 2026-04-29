@@ -326,7 +326,7 @@ function newGame() {
       level: 1,
       xp: 0,
       xpToNext: 6,
-      magnetRange: 110,
+      magnetRange: 50,
       pierce: 0,
       multishot: 1,
       spreadAngle: 0.10,
@@ -412,14 +412,13 @@ function spawnEnemy(type, originAngle) {
 
 function spawnGem(x, y, value) {
   const a = Math.random() * TWO_PI;
-  const sp = rand(40, 120);
+  const sp = rand(20, 70);
   game.gems.push({
     x, y,
     vx: Math.cos(a) * sp,
     vy: Math.sin(a) * sp,
     value,
     age: 0,
-    pulled: false,
     dead: false,
   });
 }
@@ -605,26 +604,23 @@ function update(dt) {
 
   g.enemies = g.enemies.filter(e => !e.dead);
 
-  // ----- XP gems -----
+  // ----- XP gems (always attract; magnetRange = auto-pickup radius) -----
   for (const gm of g.gems) {
     gm.age += dt;
     const dx = t.x - gm.x, dy = t.y - gm.y;
     const d = Math.hypot(dx, dy) || 1;
-    if (gm.pulled || d < t.magnetRange) {
-      gm.pulled = true;
-      const pullSpeed = 240 + gm.age * 600;
-      gm.vx += (dx / d) * pullSpeed * dt;
-      gm.vy += (dy / d) * pullSpeed * dt;
-      // damping
-      gm.vx *= 0.96; gm.vy *= 0.96;
-    } else {
-      // free drift slows down
-      gm.vx *= Math.pow(0.2, dt);
-      gm.vy *= Math.pow(0.2, dt);
-    }
+    // brief outward burst, then strong pull regardless of distance
+    const pull = 260 + gm.age * 520;
+    gm.vx += (dx / d) * pull * dt;
+    gm.vy += (dy / d) * pull * dt;
+    // fps-independent damping
+    const damp = Math.pow(0.05, dt);
+    gm.vx *= damp;
+    gm.vy *= damp;
     gm.x += gm.vx * dt;
     gm.y += gm.vy * dt;
-    if (d < t.r + 6) {
+    // pickup either inside magnet radius OR touching tower body
+    if (d < Math.max(t.r + 6, t.magnetRange)) {
       addXp(gm.value);
       gm.dead = true;
       Sfx.pickup();
