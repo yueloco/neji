@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0f1a">
+<title>CORE DEFENSE ― 360°タワーディフェンス</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="tower.css">
+</head>
+<body>
+<div id="app">
+
+  <header id="hud">
+    <div class="hud-cell">
+      <div class="hud-label">WAVE</div>
+      <div class="hud-value" id="waveNum">1</div>
+    </div>
+    <div class="hud-cell">
+      <div class="hud-label">SCORE</div>
+      <div class="hud-value" id="scoreNum">0</div>
+    </div>
+    <div class="hud-cell hp-cell">
+      <div class="hud-label">CORE</div>
+      <div class="hp-bar"><div class="hp-fill" id="hpFill"></div></div>
+    </div>
+    <div class="hud-cell">
+      <div class="hud-label">敵</div>
+      <div class="hud-value" id="enemyNum">0</div>
+    </div>
+    <button id="btnPause" class="hud-btn" title="一時停止">⏸</button>
+    <button id="btnMute"  class="hud-btn" title="音切替">🔊</button>
+  </header>
+
+  <div id="stageWrap">
+    <canvas id="stage"></canvas>
+    <div id="centerHint" class="hint">中央コアが自動で照準・射撃します</div>
+  </div>
+
+  <div id="overlay" class="hidden">
+    <div class="overlay-content">
+      <h1 id="overlayTitle">CORE DEFENSE</h1>
+      <p  id="overlayText">中央コアを守れ。360°から押し寄せる敵を撃ち落とせ。</p>
+      <div class="overlay-stats" id="overlayStats"></div>
+      <div class="overlay-buttons">
+        <button id="overlayMain">スタート</button>
+        <button id="overlaySub" class="ghost" style="display:none">タイトルへ</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script src="tower.js"></script>
+</body>
+</html>
