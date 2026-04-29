@@ -2,12 +2,15 @@
  * cache-first 戦略 — オフラインで動作 / 初回ロード後は瞬時起動
  * バージョン更新時は CACHE_NAME を上げる
  */
-const CACHE_NAME = 'screw-match-v1';
+const CACHE_NAME = 'screw-match-v2';
 const ASSETS = [
   './',
   'screw.html',
   'screw.css',
   'screw.js',
+  'tower.html',
+  'tower.css',
+  'tower.js',
   'icon.svg',
   'manifest.json',
   'tapu.ogg',
