@@ -179,40 +179,51 @@ const ENEMY_TYPES = {
 // ---------- Run-only upgrades (chosen at level up) ----------
 // rarity:  common(60%) / rare(30%) / epic(10%)
 const RUN_UPGRADES = [
-  { id:'damage',  ico:'⚔', name:'火力上昇',     desc:'ダメージ +22%',          max:20, rar:'common',
-    apply: t => { t.damage *= 1.22; } },
-  { id:'fire',    ico:'⚡', name:'連射速度',     desc:'攻撃間隔 -14%',          max:15, rar:'common',
-    apply: t => { t.fireInterval *= 0.86; } },
-  { id:'speed',   ico:'➹', name:'弾速強化',     desc:'弾速 +25%',             max:10, rar:'common',
-    apply: t => { t.bulletSpeed *= 1.25; } },
-  { id:'pierce',  ico:'➤', name:'貫通弾',       desc:'弾が +1 体貫通',         max:10, rar:'rare',
+  // === Core stats (deep stacking) ===
+  { id:'damage',  ico:'⚔', name:'火力上昇',     desc:'ダメージ +20%',          max:40, rar:'common',
+    apply: t => { t.damage *= 1.20; } },
+  { id:'fire',    ico:'⚡', name:'連射速度',     desc:'攻撃間隔 -12%',          max:30, rar:'common',
+    apply: t => { t.fireInterval *= 0.88; } },
+  { id:'speed',   ico:'➹', name:'弾速強化',     desc:'弾速 +20%',             max:20, rar:'common',
+    apply: t => { t.bulletSpeed *= 1.20; } },
+  { id:'pierce',  ico:'➤', name:'貫通弾',       desc:'弾が +1 体貫通',         max:20, rar:'rare',
     apply: t => { t.pierce += 1; } },
-  { id:'multi',   ico:'⋘', name:'マルチショット', desc:'同時発射 +1',            max:6,  rar:'rare',
+  { id:'multi',   ico:'⋘', name:'マルチショット', desc:'同時発射 +1',            max:12, rar:'rare',
     apply: t => { t.multishot += 1; } },
-  { id:'crit',    ico:'✦', name:'クリ率',       desc:'クリティカル率 +12%',    max:10, rar:'common',
-    apply: t => { t.critChance += 0.12; } },
-  { id:'critdmg', ico:'✸', name:'クリ倍率',     desc:'クリ倍率 +0.5x',         max:8,  rar:'rare',
-    apply: t => { t.critMul += 0.5; } },
-  { id:'maxhp',   ico:'♥', name:'装甲増設',     desc:'最大HP +1（全回復）',   max:12, rar:'common',
+  { id:'crit',    ico:'✦', name:'クリ率',       desc:'クリティカル率 +10%',    max:20, rar:'common',
+    apply: t => { t.critChance += 0.10; } },
+  { id:'critdmg', ico:'✸', name:'クリ倍率',     desc:'クリ倍率 +0.4x',         max:16, rar:'rare',
+    apply: t => { t.critMul += 0.4; } },
+  { id:'maxhp',   ico:'♥', name:'装甲増設',     desc:'最大HP +1（全回復）',   max:30, rar:'common',
     apply: t => { t.maxHp += 1; t.hp = t.maxHp; } },
-  { id:'regen',   ico:'✚', name:'自己修復',     desc:'HP 自動回復 +0.2/秒',   max:10, rar:'rare',
+  { id:'regen',   ico:'✚', name:'自己修復',     desc:'HP 自動回復 +0.2/秒',   max:20, rar:'rare',
     apply: t => { t.regen += 0.2; } },
-  { id:'magnet',  ico:'⌬', name:'磁場拡張',     desc:'XP回収範囲 +50%',        max:8,  rar:'common',
-    apply: t => { t.magnetRange *= 1.5; } },
-  { id:'xp',      ico:'★', name:'熟達',         desc:'EXP取得 +20%',           max:10, rar:'common',
-    apply: (_, g) => { g.xpMul *= 1.20; } },
-  { id:'leech',   ico:'◍', name:'吸命',         desc:'撃破毎に HP +0.08（蓄積）', max:6,  rar:'epic',
-    apply: t => { t.lifesteal += 0.08; } },
-  { id:'slow',    ico:'❄', name:'氷結弾',       desc:'被弾敵を +10% スロウ',     max:6,  rar:'epic',
-    apply: t => { t.slowOnHit = Math.min(0.7, t.slowOnHit + 0.10); } },
-  { id:'orbital', ico:'◯', name:'周回ドローン',  desc:'コア周囲を周回する自動攻撃 +1', max:4, rar:'epic',
-    apply: t => { t.orbitalCount += 1; rebuildDrones(); } },
-  { id:'explode', ico:'✺', name:'爆発弾',       desc:'命中時に小範囲爆発 +1',   max:5,  rar:'epic',
+  { id:'magnet',  ico:'⌬', name:'磁場拡張',     desc:'XP回収範囲 +40%',        max:15, rar:'common',
+    apply: t => { t.magnetRange *= 1.40; } },
+  { id:'xp',      ico:'★', name:'熟達',         desc:'EXP取得 +18%',           max:20, rar:'common',
+    apply: (_, g) => { g.xpMul *= 1.18; } },
+  { id:'leech',   ico:'◍', name:'吸命',         desc:'撃破毎に HP +0.06（蓄積）', max:12, rar:'epic',
+    apply: t => { t.lifesteal += 0.06; } },
+  { id:'slow',    ico:'❄', name:'氷結弾',       desc:'被弾敵を +8% スロウ',     max:10, rar:'epic',
+    apply: t => { t.slowOnHit = Math.min(0.8, t.slowOnHit + 0.08); } },
+  // === Bullet mechanics ===
+  { id:'explode', ico:'✺', name:'爆発弾',       desc:'命中時に小範囲爆発 +1',   max:10, rar:'epic',
     apply: t => { t.explosive += 1; } },
-  { id:'chain',   ico:'⌁', name:'連鎖雷',       desc:'弾が他の敵に飛び火 +1',   max:5,  rar:'epic',
+  { id:'chain',   ico:'⌁', name:'連鎖雷',       desc:'弾が他の敵に飛び火 +1',   max:10, rar:'epic',
     apply: t => { t.chain += 1; } },
-  { id:'bossdmg', ico:'☠', name:'ボス特効',     desc:'ボスへのダメージ +30%',   max:5,  rar:'rare',
-    apply: t => { t.bossDamage *= 1.30; } },
+  { id:'bossdmg', ico:'☠', name:'ボス特効',     desc:'ボスへのダメージ +25%',   max:10, rar:'rare',
+    apply: t => { t.bossDamage *= 1.25; } },
+  // === Independent weapon systems ===
+  { id:'orbital', ico:'◯', name:'周回ドローン',  desc:'周回する自動攻撃 +1',    max:8,  rar:'epic',
+    apply: t => { t.orbitalCount += 1; rebuildDrones(); } },
+  { id:'missile', ico:'🚀', name:'ミサイル',     desc:'追尾爆発弾を装備/強化',  max:25, rar:'rare',
+    apply: t => { t.missileLv += 1; } },
+  { id:'lightning',ico:'⚡', name:'雷撃',        desc:'ランダム敵に落雷/強化',  max:25, rar:'rare',
+    apply: t => { t.lightningLv += 1; } },
+  { id:'wave',    ico:'◎', name:'死の波動',     desc:'拡大リングAoE/強化',     max:25, rar:'epic',
+    apply: t => { t.deathWaveLv += 1; } },
+  { id:'garlic',  ico:'❀', name:'パルス',       desc:'タワー周囲に持続ダメ/強化', max:25, rar:'rare',
+    apply: t => { t.garlicLv += 1; } },
 ];
 
 const RAR_WEIGHT = { common:60, rare:30, epic:10 };
@@ -360,6 +371,14 @@ function newGame() {
       explosive: 0,
       chain: 0,
       bossDamage: 1,
+      missileLv: 0,
+      missileCd: 0,
+      lightningLv: 0,
+      lightningCd: 0,
+      deathWaveLv: 0,
+      deathWaveCd: 0,
+      garlicLv: 0,
+      garlicCd: 0,
     },
     enemies: [],
     bullets: [],
@@ -367,6 +386,8 @@ function newGame() {
     gems: [],
     drones: [],
     chainLines: [],
+    missiles: [],
+    deathWaves: [],
     particles: [],
     dmgTexts: [],
     shake: 0,
@@ -459,6 +480,129 @@ function rebuildDrones() {
       orbitSpeed: 2.6,
       hitTimer: new Map(),
       x: 0, y: 0,
+    });
+  }
+}
+
+// ---------- Independent weapon systems ----------
+function missileCdFor(lv)   { return Math.max(0.4, 4.0 * Math.pow(0.90, lv - 1)); }
+function missileDmgFor(lv)  { return 12 * lv * (1 + (game.tower.damage / 8)); }
+function missileRadFor(lv)  { return 50 + lv * 4; }
+
+function lightningCdFor(lv)  { return Math.max(0.5, 4.5 * Math.pow(0.91, lv - 1)); }
+function lightningDmgFor(lv) { return 8 * lv * (1 + (game.tower.damage / 10)); }
+function lightningChainFor(lv){ return Math.min(15, 1 + Math.floor(lv / 2)); }
+
+function deathWaveCdFor(lv)  { return Math.max(2.0, 9.0 * Math.pow(0.93, lv - 1)); }
+function deathWaveDmgFor(lv) { return 10 * lv * (1 + (game.tower.damage / 6)); }
+function deathWaveRadFor(lv) { return 180 + lv * 22; }
+
+function garlicCdFor(lv)     { return Math.max(0.20, 0.7 * Math.pow(0.93, lv - 1)); }
+function garlicDmgFor(lv)    { return 1.5 * lv * (1 + (game.tower.damage / 12)); }
+function garlicRadFor(lv)    { return 90 + lv * 6; }
+
+function fireMissile() {
+  const t = game.tower;
+  // pick highest-HP enemy on screen
+  let target = null, bestHp = -1;
+  for (const e of game.enemies) {
+    if (e.dead) continue;
+    if (e.hp > bestHp) { bestHp = e.hp; target = e; }
+  }
+  if (!target) return;
+  const a = Math.atan2(target.y - t.y, target.x - t.x);
+  game.missiles.push({
+    x: t.x, y: t.y,
+    vx: Math.cos(a) * 100,
+    vy: Math.sin(a) * 100,
+    target,
+    dmg: missileDmgFor(t.missileLv),
+    radius: missileRadFor(t.missileLv),
+    life: 5.0,
+    dead: false,
+  });
+  Sfx.shoot();
+}
+
+function fireLightning() {
+  const t = game.tower;
+  if (game.enemies.length === 0) return;
+  const start = game.enemies[(Math.random() * game.enemies.length) | 0];
+  if (!start || start.dead) return;
+  const dmg = lightningDmgFor(t.lightningLv);
+  const jumps = lightningChainFor(t.lightningLv);
+  // strike from sky to first enemy
+  game.chainLines.push({
+    kind:'bolt',
+    x1: start.x + (Math.random() - 0.5) * 30, y1: -20,
+    x2: start.x, y2: start.y,
+    life:0.18, maxLife:0.18,
+    dead:false,
+  });
+  applyDamage(start, dmg);
+  // chain from start
+  let last = start;
+  let curDmg = dmg * 0.85;
+  const seen = new Set([start]);
+  const range = 220;
+  for (let i = 0; i < jumps; i++) {
+    let next = null, bestD = range * range;
+    for (const e of game.enemies) {
+      if (e.dead || seen.has(e)) continue;
+      const dx = e.x - last.x, dy = e.y - last.y;
+      const d2 = dx*dx + dy*dy;
+      if (d2 < bestD) { bestD = d2; next = e; }
+    }
+    if (!next) break;
+    applyDamage(next, curDmg);
+    game.chainLines.push({
+      kind:'bolt',
+      x1:last.x, y1:last.y, x2:next.x, y2:next.y,
+      life:0.16, maxLife:0.16,
+      dead:false,
+    });
+    seen.add(next);
+    last = next;
+    curDmg *= 0.85;
+  }
+  Sfx.crit();
+}
+
+function fireDeathWave() {
+  const t = game.tower;
+  game.deathWaves.push({
+    x: t.x, y: t.y,
+    r: t.r,
+    maxR: deathWaveRadFor(t.deathWaveLv),
+    speed: 360,
+    dmg: deathWaveDmgFor(t.deathWaveLv),
+    life: 1.5,
+    hits: new Set(),
+    dead: false,
+  });
+  addShake(3);
+  Sfx.bossDown();
+}
+
+function fireGarlic() {
+  const t = game.tower;
+  const dmg = garlicDmgFor(t.garlicLv);
+  const rad = garlicRadFor(t.garlicLv);
+  let hit = 0;
+  for (const e of game.enemies) {
+    if (e.dead) continue;
+    const dx = e.x - t.x, dy = e.y - t.y;
+    if (dx*dx + dy*dy <= rad * rad) {
+      applyDamage(e, dmg);
+      hit++;
+    }
+  }
+  if (hit > 0) {
+    game.chainLines.push({
+      kind:'ring',
+      x: t.x, y: t.y, r: rad,
+      life:0.18, maxLife:0.18,
+      dead:false,
     });
   }
 }
@@ -684,6 +828,109 @@ function update(dt) {
   }
   g.gems = g.gems.filter(gm => !gm.dead);
 
+  // ----- Independent weapons (cooldown ticks) -----
+  if (t.missileLv > 0) {
+    t.missileCd -= dt;
+    if (t.missileCd <= 0 && g.enemies.length > 0) {
+      fireMissile();
+      t.missileCd = missileCdFor(t.missileLv);
+    }
+  }
+  if (t.lightningLv > 0) {
+    t.lightningCd -= dt;
+    if (t.lightningCd <= 0 && g.enemies.length > 0) {
+      fireLightning();
+      t.lightningCd = lightningCdFor(t.lightningLv);
+    }
+  }
+  if (t.deathWaveLv > 0) {
+    t.deathWaveCd -= dt;
+    if (t.deathWaveCd <= 0) {
+      fireDeathWave();
+      t.deathWaveCd = deathWaveCdFor(t.deathWaveLv);
+    }
+  }
+  if (t.garlicLv > 0) {
+    t.garlicCd -= dt;
+    if (t.garlicCd <= 0) {
+      fireGarlic();
+      t.garlicCd = garlicCdFor(t.garlicLv);
+    }
+  }
+
+  // ----- Missiles (homing + explode on contact) -----
+  for (const m of g.missiles) {
+    m.life -= dt;
+    if (m.life <= 0) { m.dead = true; continue; }
+    // re-acquire if target died
+    if (!m.target || m.target.dead) {
+      let best = null, bestD = Infinity;
+      for (const e of g.enemies) {
+        if (e.dead) continue;
+        const dx = e.x - m.x, dy = e.y - m.y;
+        const d2 = dx*dx + dy*dy;
+        if (d2 < bestD) { bestD = d2; best = e; }
+      }
+      m.target = best;
+    }
+    if (m.target) {
+      const dx = m.target.x - m.x, dy = m.target.y - m.y;
+      const d = Math.hypot(dx, dy) || 1;
+      // homing acceleration
+      const accel = 600;
+      m.vx += (dx / d) * accel * dt;
+      m.vy += (dy / d) * accel * dt;
+      // cap speed
+      const sp = Math.hypot(m.vx, m.vy);
+      const maxSp = 360;
+      if (sp > maxSp) { m.vx *= maxSp / sp; m.vy *= maxSp / sp; }
+    }
+    m.x += m.vx * dt;
+    m.y += m.vy * dt;
+    // collision check
+    let exploded = false;
+    for (const e of g.enemies) {
+      if (e.dead) continue;
+      const dx = e.x - m.x, dy = e.y - m.y;
+      const rr = e.r + 6;
+      if (dx*dx + dy*dy <= rr*rr) {
+        // explosion!
+        for (const e2 of g.enemies) {
+          if (e2.dead) continue;
+          const ex = e2.x - m.x, ey = e2.y - m.y;
+          if (ex*ex + ey*ey <= m.radius * m.radius) {
+            applyDamage(e2, m.dmg);
+          }
+        }
+        spawnParticles(m.x, m.y, '#ffa05d', 20, [120, 320], [0.3, 0.7]);
+        g.chainLines.push({ kind:'ring', x:m.x, y:m.y, r:m.radius, life:0.3, maxLife:0.3, dead:false });
+        addShake(4);
+        m.dead = true;
+        exploded = true;
+        break;
+      }
+    }
+    if (exploded) continue;
+  }
+  g.missiles = g.missiles.filter(m => !m.dead);
+
+  // ----- Death waves (expanding ring) -----
+  for (const w of g.deathWaves) {
+    w.life -= dt;
+    w.r += w.speed * dt;
+    if (w.r >= w.maxR || w.life <= 0) { w.dead = true; continue; }
+    for (const e of g.enemies) {
+      if (e.dead || w.hits.has(e)) continue;
+      const dx = e.x - w.x, dy = e.y - w.y;
+      const d  = Math.hypot(dx, dy);
+      if (d <= w.r + e.r && d >= w.r - 18) {
+        applyDamage(e, w.dmg);
+        w.hits.add(e);
+      }
+    }
+  }
+  g.deathWaves = g.deathWaves.filter(w => !w.dead);
+
   // ----- Orbital drones -----
   for (const dr of g.drones) {
     dr.angle += dr.orbitSpeed * dt;
@@ -896,7 +1143,10 @@ function addXp(amount) {
   while (t.xp >= t.xpToNext) {
     t.xp -= t.xpToNext;
     t.level++;
-    t.xpToNext = Math.round(6 + t.level * 4 + t.level * t.level * 0.5);
+    // soft-capped quadratic so endless leveling stays achievable
+    const lv = t.level;
+    const quad = Math.min(50, lv);
+    t.xpToNext = Math.round(6 + lv * 4 + quad * lv * 0.5);
     game.pendingLevelUps++;
   }
   if (game.pendingLevelUps > 0 && mode === 'playing') showLevelUp();
@@ -1118,6 +1368,52 @@ function render() {
   // tower
   drawTower();
 
+  // missiles
+  for (const m of game.missiles) {
+    const ang = Math.atan2(m.vy, m.vx);
+    ctx.save();
+    ctx.translate(m.x, m.y);
+    ctx.rotate(ang);
+    ctx.shadowColor = '#ffa05d';
+    ctx.shadowBlur = 14;
+    // body
+    ctx.fillStyle = '#ffd24a';
+    ctx.beginPath();
+    ctx.moveTo(8, 0);
+    ctx.lineTo(-6, 4);
+    ctx.lineTo(-6, -4);
+    ctx.closePath();
+    ctx.fill();
+    // exhaust
+    ctx.globalAlpha = 0.6;
+    ctx.fillStyle = '#ff8a3a';
+    ctx.beginPath();
+    ctx.arc(-8, 0, 3, 0, TWO_PI);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // death waves
+  for (const w of game.deathWaves) {
+    const k = Math.max(0, 1 - w.r / w.maxR);
+    ctx.save();
+    ctx.strokeStyle = '#a8f0ff';
+    ctx.shadowColor = '#5ad6ff';
+    ctx.shadowBlur = 18;
+    ctx.lineWidth = 6 * (0.4 + k * 0.6);
+    ctx.globalAlpha = 0.4 + k * 0.5;
+    ctx.beginPath();
+    ctx.arc(w.x, w.y, w.r, 0, TWO_PI);
+    ctx.stroke();
+    // inner trailing line
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.25 * k;
+    ctx.beginPath();
+    ctx.arc(w.x, w.y, w.r - 14, 0, TWO_PI);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // orbital drones
   for (const dr of game.drones) {
     ctx.save();
@@ -1230,7 +1526,7 @@ function render() {
   ctx.font = '700 10px -apple-system,sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'bottom';
-  ctx.fillText('v5 — endless expansion', 8, H - 6);
+  ctx.fillText('v6 — weapon arsenal', 8, H - 6);
   ctx.restore();
 }
 
