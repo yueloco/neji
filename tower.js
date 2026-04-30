@@ -333,7 +333,24 @@ function resize() {
   canvas.style.height = H + 'px';
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 }
-window.addEventListener('resize', resize);
+window.addEventListener('resize', () => { resize(); initStars(); });
+
+// ---------- Background star field (purely cosmetic) ----------
+const stars = [];
+function initStars() {
+  stars.length = 0;
+  const n = Math.max(60, Math.floor((W * H) / 12000));
+  for (let i = 0; i < n; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      r: Math.random() * 1.4 + 0.3,
+      tw: Math.random() * TWO_PI,
+      twSpd: 0.5 + Math.random() * 1.4,
+      drift: Math.random() * 0.3 + 0.05,
+    });
+  }
+}
 
 // ---------- Game state ----------
 let game = null;
@@ -401,6 +418,9 @@ function newGame() {
     xpMul: 1,
     rerollsLeft: 0,
     bossesKilled: 0,
+    combo: 0,
+    comboTimer: 0,
+    flashes: [],
   };
   applyMetaToRun(game);
   rebuildDrones();
@@ -656,6 +676,10 @@ function addShake(amount) {
   game.shake = Math.min(14, Math.max(game.shake, amount));
 }
 
+function pushFlash(color, strength = 0.35) {
+  game.flashes.push({ color, life: strength, maxLife: strength });
+}
+
 function spawnEnemyShot(e, angle) {
   game.enemyShots.push({
     x: e.x, y: e.y,
@@ -708,6 +732,7 @@ function update(dt) {
 
   // ----- Player bullets -----
   for (const b of g.bullets) {
+    b.px = b.x; b.py = b.y;
     b.x += b.vx * dt;
     b.y += b.vy * dt;
     b.life -= dt;
@@ -985,6 +1010,14 @@ function update(dt) {
   // ----- Shake decay -----
   if (g.shake > 0) g.shake = Math.max(0, g.shake - dt * 24);
 
+  // ----- Combo timer + flashes decay -----
+  if (g.comboTimer > 0) {
+    g.comboTimer -= dt;
+    if (g.comboTimer <= 0) g.combo = 0;
+  }
+  for (const f of g.flashes) f.life -= dt;
+  g.flashes = g.flashes.filter(f => f.life > 0);
+
   // ----- HP regen -----
   if (t.regen > 0 && t.hp < t.maxHp) {
     t.regenAcc += t.regen * dt;
@@ -1097,7 +1130,19 @@ function doChain(srcEnemy, baseDmg, jumps) {
 function onEnemyKilled(e) {
   game.kills++;
   game.score += e.score;
+  // combo
+  game.combo += 1;
+  game.comboTimer = 1.6;
   if (e.boss) Sfx.bossDown(); else Sfx.kill();
+  // edge flash matching enemy color
+  if (e.boss) {
+    pushFlash('#ff3a3a', 0.5);
+  } else if (game.combo % 25 === 0) {
+    pushFlash(e.color, 0.25);
+  }
+  // bigger kill burst (more particles, multi-tone)
+  spawnParticles(e.x, e.y, e.color, e.boss ? 60 : 14, [80, 320], [0.4, 0.9]);
+  spawnParticles(e.x, e.y, '#ffffff', e.boss ? 16 : 4, [30, 120], [0.2, 0.5]);
   // lifesteal
   const t = game.tower;
   if (t.lifesteal > 0 && t.hp < t.maxHp) {
@@ -1108,11 +1153,12 @@ function onEnemyKilled(e) {
       spawnDamageNumber(t.x, t.y - t.r - 6, '+1', '#5dffa1', 13);
     }
   }
-  // big particle burst + XP drop
-  spawnParticles(e.x, e.y, e.color, e.boss ? 28 : 9, [80, 280], [0.35, 0.8]);
   if (e.boss) {
-    addShake(8);
-    spawnDamageNumber(e.x, e.y, 'BOSS DOWN', '#ffd24a', 18);
+    addShake(10);
+    spawnDamageNumber(e.x, e.y, 'BOSS DOWN', '#ffd24a', 22);
+    // boss death: shockwave + bonus particles
+    game.chainLines.push({ kind:'ring', x:e.x, y:e.y, r: e.r * 4, life:0.5, maxLife:0.5, dead:false });
+    spawnParticles(e.x, e.y, '#ffd24a', 30, [120, 420], [0.5, 1.1]);
   }
   // gems: bosses drop a swarm
   const gemValue = Math.max(1, Math.round(e.score * 0.1));
@@ -1252,16 +1298,18 @@ function fireBullet(t, target) {
     const isCrit = Math.random() < t.critChance;
     const dmg = t.damage * (isCrit ? t.critMul : 1);
     const sp = t.bulletSpeed;
+    const bx = t.x + Math.cos(ang) * (t.r + 2);
+    const by = t.y + Math.sin(ang) * (t.r + 2);
     game.bullets.push({
-      x: t.x + Math.cos(ang) * (t.r + 2),
-      y: t.y + Math.sin(ang) * (t.r + 2),
+      x: bx, y: by,
+      px: bx, py: by,
       vx: Math.cos(ang) * sp,
       vy: Math.sin(ang) * sp,
       r: t.bulletRadius,
       damage: dmg,
       crit: isCrit,
       pierce: t.pierce | 0,
-      hits: null, // assigned on demand
+      hits: null,
       life: 2.0,
       dead: false,
     });
@@ -1284,6 +1332,31 @@ function nextWave() {
 // ---------- Render ----------
 function render() {
   ctx.clearRect(0, 0, W, H);
+
+  // ----- background stars (drift outward + twinkle) -----
+  const tnow = performance.now() / 1000;
+  ctx.save();
+  for (const s of stars) {
+    // radial drift outward from center
+    const dx = s.x - CX, dy = s.y - CY;
+    const dd = Math.hypot(dx, dy) || 1;
+    s.x += (dx / dd) * s.drift;
+    s.y += (dy / dd) * s.drift;
+    if (s.x < -10 || s.x > W + 10 || s.y < -10 || s.y > H + 10) {
+      // respawn near center
+      const a = Math.random() * TWO_PI;
+      const r = 30 + Math.random() * 80;
+      s.x = CX + Math.cos(a) * r;
+      s.y = CY + Math.sin(a) * r;
+    }
+    const a = 0.25 + (Math.sin(tnow * s.twSpd + s.tw) + 1) * 0.25;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = '#a8d4ff';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, TWO_PI);
+    ctx.fill();
+  }
+  ctx.restore();
 
   // background grid
   ctx.save();
@@ -1338,17 +1411,27 @@ function render() {
     ctx.restore();
   }
 
-  // bullets
+  // bullets (with motion trail)
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
   for (const b of game.bullets) {
-    ctx.save();
-    ctx.fillStyle = '#fff7a8';
-    ctx.shadowColor = '#ffd24a';
-    ctx.shadowBlur = 12;
+    // trail line
+    ctx.strokeStyle = b.crit ? 'rgba(255,210,74,0.55)' : 'rgba(255,247,168,0.45)';
+    ctx.lineWidth = b.r * 1.4;
+    ctx.lineCap = 'round';
+    ctx.shadowColor = b.crit ? '#ffd24a' : '#ffd24a';
+    ctx.shadowBlur = 14;
     ctx.beginPath();
-    ctx.arc(b.x, b.y, b.r, 0, TWO_PI);
+    ctx.moveTo(b.px, b.py);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    // bullet head
+    ctx.fillStyle = b.crit ? '#ffd24a' : '#fff7a8';
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r * (b.crit ? 1.4 : 1), 0, TWO_PI);
     ctx.fill();
-    ctx.restore();
   }
+  ctx.restore();
 
   // enemy projectiles
   for (const s of game.enemyShots) {
@@ -1520,18 +1603,92 @@ function render() {
     ctx.restore();
   }
 
+  // ----- screen-edge flash (kill bursts / boss down) -----
+  if (game && game.flashes && game.flashes.length) {
+    ctx.save();
+    for (const f of game.flashes) {
+      const k = Math.max(0, f.life / f.maxLife);
+      ctx.globalAlpha = k * 0.9;
+      const grd = ctx.createRadialGradient(CX, CY, Math.min(W, H) * 0.35, CX, CY, Math.max(W, H) * 0.7);
+      const c = f.color;
+      grd.addColorStop(0, c + '00');
+      grd.addColorStop(1, c);
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, W, H);
+    }
+    ctx.restore();
+  }
+
+  // ----- Combo banner (top-center) -----
+  if (game && game.combo >= 5) {
+    const k = Math.min(1, game.comboTimer / 0.4);
+    ctx.save();
+    ctx.globalAlpha = 0.85 * k;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    const big = Math.min(48, 22 + game.combo * 0.6);
+    ctx.font = `900 ${big}px -apple-system,sans-serif`;
+    ctx.fillStyle = '#ffd24a';
+    ctx.shadowColor = '#ff8a3a';
+    ctx.shadowBlur = 18;
+    ctx.fillText(`${game.combo} COMBO`, CX, 48);
+    ctx.shadowBlur = 0;
+    ctx.font = '700 11px -apple-system,sans-serif';
+    ctx.fillStyle = '#ffe9b8';
+    ctx.fillText(`x${(1 + game.combo * 0.02).toFixed(2)}`, CX, 48 + big * 0.95);
+    ctx.restore();
+  }
+
   // version stamp (lets us confirm fresh code is loaded)
   ctx.save();
   ctx.fillStyle = 'rgba(141,155,191,0.6)';
   ctx.font = '700 10px -apple-system,sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'bottom';
-  ctx.fillText('v6 — weapon arsenal', 8, H - 6);
+  ctx.fillText('v7 — flashy mode', 8, H - 6);
   ctx.restore();
 }
 
 function drawTower() {
   const t = game.tower;
+  // ambient pulse rings (cosmetic)
+  const tn = performance.now() / 1000;
+  for (let i = 0; i < 3; i++) {
+    const phase = (tn * 0.6 + i * 0.33) % 1;
+    const rr = t.r + 14 + phase * 80;
+    const a = (1 - phase) * 0.18;
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = '#5ad6ff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, rr, 0, TWO_PI);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // garlic aura (if equipped)
+  if (t.garlicLv > 0) {
+    const r = garlicRadFor(t.garlicLv);
+    ctx.save();
+    const grd = ctx.createRadialGradient(t.x, t.y, t.r, t.x, t.y, r);
+    grd.addColorStop(0, 'rgba(141,255,161,0.10)');
+    grd.addColorStop(1, 'rgba(141,255,161,0)');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, r, 0, TWO_PI);
+    ctx.fill();
+    // dotted boundary
+    ctx.strokeStyle = 'rgba(141,255,161,0.25)';
+    ctx.setLineDash([4, 6]);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, r, 0, TWO_PI);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
   // XP ring (outer arc)
   const xpPct = t.xp / t.xpToNext;
   ctx.save();
@@ -1840,6 +1997,7 @@ function tick(now) {
 
 // ---------- Init ----------
 resize();
+initStars();
 showTitle();
 requestAnimationFrame(tick);
 
