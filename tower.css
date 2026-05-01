@@ -292,6 +292,80 @@ html,body{
 .shop-row.maxed{opacity:.6}
 .shop-row.maxed .buy{display:none}
 
+/* ========== shop tabs ========== */
+.shop-tabs{
+  display:flex;
+  gap:4px;
+  margin-bottom:8px;
+  border-bottom:1px solid var(--grid);
+}
+.shop-tab{
+  font:inherit;
+  font-size:12px;
+  font-weight:700;
+  letter-spacing:.05em;
+  padding:7px 14px;
+  border:1px solid var(--grid);
+  border-bottom:none;
+  border-radius:8px 8px 0 0;
+  background:#0c1430;
+  color:var(--fg-dim);
+  cursor:pointer;
+  transition:background .15s,color .15s;
+}
+.shop-tab:hover{color:var(--fg)}
+.shop-tab.active{
+  background:linear-gradient(180deg,#1a2a52,#13204a);
+  color:var(--accent);
+  border-color:var(--accent);
+  box-shadow:0 0 12px rgba(90,214,255,.18);
+}
+
+/* ========== build guide ========== */
+.title-guide-btn{
+  display:block;
+  margin:0 auto 14px;
+  background:transparent;
+  color:var(--fg-dim);
+  border:1px dashed var(--grid);
+  border-radius:8px;
+  padding:6px 14px;
+  font:inherit;
+  font-size:12px;
+  cursor:pointer;
+  transition:color .15s, border-color .15s;
+}
+.title-guide-btn:hover{color:var(--accent);border-color:var(--accent)}
+
+.build-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin:10px 0 14px;
+  text-align:left;
+  max-height:50vh;
+  overflow-y:auto;
+}
+@media(max-width:520px){.build-grid{grid-template-columns:1fr}}
+.build-card{
+  background:linear-gradient(180deg,#162043,#0c1226);
+  border:1px solid #2a3866;
+  border-radius:12px;
+  padding:12px;
+}
+.bc-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.bc-ico{font-size:22px}
+.bc-name{font-weight:800;font-size:14px;color:var(--fg)}
+.bc-target{font-size:11px;color:var(--accent);margin-bottom:8px}
+.bc-picks{font-size:12px;color:var(--fg);margin-bottom:6px}
+.bc-label{
+  display:inline-block;
+  font-size:9px;font-weight:800;letter-spacing:.1em;
+  color:var(--bg-1);background:var(--accent-2);
+  padding:1px 5px;border-radius:3px;margin-right:4px;vertical-align:middle;
+}
+.bc-note{font-size:11px;color:var(--fg-dim);line-height:1.5}
+
 /* ========== floating wave banner ========== */
 .wave-banner{
   position:absolute;

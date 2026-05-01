@@ -174,52 +174,64 @@ let meta = loadMeta();
 // while per-Lv effects compound — this is the "number-go-up" loop.
 const expCost = (base, growth) => lv => Math.round(base * Math.pow(growth, lv));
 const META_UPGRADES = [
-  { id:'dmg',    ico:'⚔', name:'初期火力',    desc:'ダメージ ×1.04/Lv（複利）',
+  // === 攻撃 ===
+  { id:'dmg',    cat:'attack', ico:'⚔', name:'初期火力',    desc:'ダメージ ×1.04/Lv（複利）',
     max:99, cost:expCost(30, 1.16),
     apply:(lv, t) => { t.damage *= Math.pow(1.04, lv); } },
-  { id:'rate',   ico:'⚡', name:'初期連射',    desc:'攻撃間隔 ×0.985/Lv',
+  { id:'rate',   cat:'attack', ico:'⚡', name:'初期連射',    desc:'攻撃間隔 ×0.985/Lv',
     max:99, cost:expCost(40, 1.16),
     apply:(lv, t) => { t.fireInterval *= Math.pow(0.985, lv); } },
-  { id:'hp',     ico:'♥', name:'コア強度',    desc:'最大HP +1/Lv',
-    max:99, cost:expCost(50, 1.18),
-    apply:(lv, t) => { t.maxHp += lv; t.hp = t.maxHp; } },
-  { id:'speed',  ico:'➹', name:'弾速',       desc:'弾速 ×1.03/Lv',
+  { id:'speed',  cat:'attack', ico:'➹', name:'弾速',       desc:'弾速 ×1.03/Lv',
     max:99, cost:expCost(25, 1.14),
     apply:(lv, t) => { t.bulletSpeed *= Math.pow(1.03, lv); } },
-  { id:'crit',   ico:'✦', name:'初期クリ率',  desc:'クリ率 +1%/Lv',
+  { id:'crit',   cat:'attack', ico:'✦', name:'初期クリ率',  desc:'クリ率 +1%/Lv',
     max:60, cost:expCost(60, 1.16),
     apply:(lv, t) => { t.critChance += 0.01 * lv; } },
-  { id:'regen',  ico:'✚', name:'自己修復',    desc:'HP回復 +0.05/秒/Lv',
+  // === 防御 ===
+  { id:'hp',     cat:'defense', ico:'♥', name:'コア強度',    desc:'最大HP +1/Lv',
+    max:99, cost:expCost(50, 1.18),
+    apply:(lv, t) => { t.maxHp += lv; t.hp = t.maxHp; } },
+  { id:'regen',  cat:'defense', ico:'✚', name:'自己修復',    desc:'HP回復 +0.05/秒/Lv',
     max:99, cost:expCost(50, 1.16),
     apply:(lv, t) => { t.regen += 0.05 * lv; } },
-  { id:'armor',  ico:'⛨', name:'装甲',       desc:'被ダメ ×0.985/Lv（乗算）',
+  { id:'armor',  cat:'defense', ico:'⛨', name:'装甲',       desc:'被ダメ ×0.985/Lv（乗算）',
     max:80, cost:expCost(70, 1.17),
     apply:(lv, t) => { t.armor *= Math.pow(0.985, lv); } },
-  { id:'waveheal',ico:'⚕', name:'戦間補給',   desc:'ウェーブ毎にHP +1/Lv',
+  { id:'waveheal',cat:'defense', ico:'⚕', name:'戦間補給',   desc:'ウェーブ毎にHP +1/Lv',
     max:50, cost:expCost(80, 1.17),
     apply:(lv, t) => { t.waveHeal += lv; } },
-  { id:'thorns', ico:'⚝', name:'反射装甲',    desc:'被弾時に反射 +1/Lv',
+  { id:'thorns', cat:'defense', ico:'⚝', name:'反射装甲',    desc:'被弾時に反射 +1/Lv',
     max:50, cost:expCost(80, 1.17),
     apply:(lv, t) => { t.thorns += lv; } },
-  { id:'magnet', ico:'⌬', name:'磁場',       desc:'XP回収範囲 ×1.10/Lv',
-    max:30, cost:expCost(35, 1.13),
-    apply:(lv, t) => { t.magnetRange *= Math.pow(1.10, lv); } },
-  { id:'xp',     ico:'★', name:'熟練',       desc:'EXP取得 ×1.05/Lv',
-    max:60, cost:expCost(45, 1.15),
-    apply:(lv, t, g) => { g.xpMul *= Math.pow(1.05, lv); } },
-  { id:'meta',   ico:'◆', name:'勲章',       desc:'終了時メタ点 ×1.10/Lv',
-    max:60, cost:expCost(80, 1.17),
-    apply:(lv, _t, g) => { g.metaMul *= Math.pow(1.10, lv); } },
-  { id:'startlv',ico:'⇧', name:'先制強化',    desc:'ラン開始時にLv+1/Lv',
-    max:20, cost:expCost(150, 1.55),
-    apply:(lv, _t, g) => { g.pendingLevelUps += lv; } },
-  { id:'reroll', ico:'⟲', name:'リロール所持', desc:'開始リロール +1/Lv',
-    max:30, cost:expCost(80, 1.30),
-    apply:(lv, _t, g) => { g.rerollsLeft += lv; } },
-  { id:'orbital',ico:'◯', name:'初期ドローン', desc:'開始時に周回ドローン +1/Lv',
+  // === 武器 ===
+  { id:'orbital',cat:'weapon', ico:'◯', name:'初期ドローン', desc:'開始時に周回ドローン +1/Lv',
     max:8,  cost:expCost(220, 1.55),
     apply:(lv, t) => { t.orbitalCount += lv; } },
+  // === 補助 ===
+  { id:'magnet', cat:'utility', ico:'⌬', name:'磁場',       desc:'XP回収範囲 ×1.10/Lv',
+    max:30, cost:expCost(35, 1.13),
+    apply:(lv, t) => { t.magnetRange *= Math.pow(1.10, lv); } },
+  { id:'xp',     cat:'utility', ico:'★', name:'熟練',       desc:'EXP取得 ×1.05/Lv',
+    max:60, cost:expCost(45, 1.15),
+    apply:(lv, t, g) => { g.xpMul *= Math.pow(1.05, lv); } },
+  { id:'meta',   cat:'utility', ico:'◆', name:'勲章',       desc:'終了時メタ点 ×1.10/Lv',
+    max:60, cost:expCost(80, 1.17),
+    apply:(lv, _t, g) => { g.metaMul *= Math.pow(1.10, lv); } },
+  { id:'startlv',cat:'utility', ico:'⇧', name:'先制強化',    desc:'ラン開始時にLv+1/Lv',
+    max:20, cost:expCost(150, 1.55),
+    apply:(lv, _t, g) => { g.pendingLevelUps += lv; } },
+  { id:'reroll', cat:'utility', ico:'⟲', name:'リロール所持', desc:'開始リロール +1/Lv',
+    max:30, cost:expCost(80, 1.30),
+    apply:(lv, _t, g) => { g.rerollsLeft += lv; } },
 ];
+
+const META_TABS = [
+  { id:'attack',  label:'攻撃' },
+  { id:'defense', label:'防御' },
+  { id:'weapon',  label:'武器' },
+  { id:'utility', label:'補助' },
+];
+let currentShopTab = 'attack';
 
 function metaLv(id)  { return meta.upgrades[id] || 0; }
 function metaCost(u) { return u.cost(metaLv(u.id)); }
@@ -427,6 +439,7 @@ const hudHp        = document.getElementById('hpFill');
 const hudEnemy     = document.getElementById('enemyNum');
 const btnPause     = document.getElementById('btnPause');
 const btnMute      = document.getElementById('btnMute');
+const btnStats     = document.getElementById('btnStats');
 
 // ---------- Canvas sizing ----------
 let W = 0, H = 0, CX = 0, CY = 0, DPR = 1;
@@ -532,6 +545,10 @@ function newGame() {
     combo: 0,
     comboTimer: 0,
     flashes: [],
+    statsOpen: false,
+    totalDamage: 0,
+    runStart: performance.now(),
+    weaponCounts: { missile: 0, lightning: 0, deathwave: 0, garlic: 0 },
   };
   applyMetaToRun(game);
   rebuildDrones();
@@ -681,6 +698,7 @@ function fireMissile() {
     life: 5.0,
     dead: false,
   });
+  game.weaponCounts.missile++;
   Sfx.shoot();
 }
 
@@ -725,6 +743,7 @@ function fireLightning() {
     last = next;
     curDmg *= 0.85;
   }
+  game.weaponCounts.lightning++;
   Sfx.crit();
 }
 
@@ -741,6 +760,7 @@ function fireDeathWave() {
     dead: false,
   });
   addShake(3);
+  game.weaponCounts.deathwave++;
   Sfx.bossDown();
 }
 
@@ -765,6 +785,7 @@ function fireGarlic() {
       dead:false,
     });
   }
+  game.weaponCounts.garlic++;
 }
 
 function spawnGem(x, y, value) {
@@ -1207,6 +1228,7 @@ function applyDamage(e, dmg, isCrit) {
   }
   if (dmg > 0) e.hp -= dmg;
   e.flash = 0.12;
+  game.totalDamage += dmg + shieldAbsorbed;
   if (isCrit) Sfx.crit(); else Sfx.hit();
   spawnParticles(e.x, e.y, e.color, 3, [60, 180], [0.18, 0.4]);
   if (shieldAbsorbed > 0) {
@@ -1845,8 +1867,118 @@ function render() {
   ctx.font = '700 10px -apple-system,sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'bottom';
-  ctx.fillText('v10 — elites, swarms, more bosses', 8, H - 6);
+  ctx.fillText('v11 — build helper UI', 8, H - 6);
   ctx.restore();
+
+  // status panel (toggleable)
+  if (game && game.statsOpen) drawStatsPanel();
+}
+
+function calcDps(t) {
+  const cf = (1 - t.critChance) + Math.min(1, t.critChance) * t.critMul;
+  const main = (t.damage * cf * t.multishot) / Math.max(0.01, t.fireInterval);
+  let weap = 0;
+  if (t.missileLv > 0)   weap += missileDmgFor(t.missileLv) * 4 / missileCdFor(t.missileLv);
+  if (t.lightningLv > 0) weap += lightningDmgFor(t.lightningLv) * lightningChainFor(t.lightningLv) / lightningCdFor(t.lightningLv);
+  if (t.deathWaveLv > 0) weap += deathWaveDmgFor(t.deathWaveLv) * 6 / deathWaveCdFor(t.deathWaveLv);
+  if (t.garlicLv > 0)    weap += garlicDmgFor(t.garlicLv) * 5 / garlicCdFor(t.garlicLv);
+  return main + weap;
+}
+
+function drawStatsPanel() {
+  const t = game.tower;
+  const x = W - 270;
+  let y = 12;
+  const lh = 16;
+
+  ctx.save();
+  // panel bg
+  const rows = 22;
+  ctx.fillStyle = 'rgba(11,15,26,0.88)';
+  ctx.strokeStyle = '#243254';
+  ctx.lineWidth = 1;
+  const pw = 256, ph = lh * rows + 18;
+  roundRect(x, y, pw, ph, 10);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.font = '800 12px -apple-system,sans-serif';
+  ctx.fillStyle = '#5ad6ff';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText('STATUS', x + 12, y + 8);
+  y += 22;
+
+  const row = (label, val, color) => {
+    ctx.font = '700 11px -apple-system,sans-serif';
+    ctx.fillStyle = '#8d9bbf';
+    ctx.fillText(label, x + 12, y);
+    ctx.fillStyle = color || '#e6ecff';
+    ctx.font = '800 12px -apple-system,sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(val, x + pw - 12, y - 1);
+    ctx.textAlign = 'left';
+    y += lh;
+  };
+  const head = (label) => {
+    y += 4;
+    ctx.fillStyle = '#5ad6ff';
+    ctx.font = '800 10px -apple-system,sans-serif';
+    ctx.fillText('— ' + label + ' —', x + 12, y);
+    y += lh;
+  };
+
+  head('射撃');
+  row('DPS (推定)', fmt(calcDps(t)), '#ffd24a');
+  row('ダメージ', fmt(t.damage));
+  row('発射間隔', t.fireInterval.toFixed(2) + 's');
+  row('マルチショット', `${t.multishot}`);
+  row('クリ率/倍率', `${(t.critChance*100).toFixed(0)}% / x${t.critMul.toFixed(1)}`);
+  row('貫通', `${t.pierce}`);
+  if (t.explosive > 0) row('爆発弾', `Lv${t.explosive}`);
+  if (t.chain > 0)     row('連鎖雷', `Lv${t.chain}`);
+  if (t.bossDamage > 1)row('ボス特効', `x${t.bossDamage.toFixed(2)}`);
+
+  head('武器');
+  if (t.missileLv > 0)
+    row('🚀 ミサイル', `Lv${t.missileLv} • ${missileCdFor(t.missileLv).toFixed(2)}s`);
+  if (t.lightningLv > 0)
+    row('⚡ 雷撃', `Lv${t.lightningLv} • ${lightningChainFor(t.lightningLv)}鎖 • ${lightningCdFor(t.lightningLv).toFixed(2)}s`);
+  if (t.deathWaveLv > 0)
+    row('◎ 死の波動', `Lv${t.deathWaveLv} • ${deathWaveCdFor(t.deathWaveLv).toFixed(2)}s`);
+  if (t.garlicLv > 0)
+    row('❀ パルス', `Lv${t.garlicLv} • ${garlicCdFor(t.garlicLv).toFixed(2)}s`);
+  if (t.orbitalCount > 0)
+    row('◯ ドローン', `${t.orbitalCount}基`);
+  if (!t.missileLv && !t.lightningLv && !t.deathWaveLv && !t.garlicLv && !t.orbitalCount) {
+    row('—', '未取得');
+  }
+
+  head('防御');
+  row('HP / 最大', `${Math.ceil(t.hp)} / ${t.maxHp}`);
+  if (t.regen > 0) row('再生', `+${t.regen.toFixed(2)}/s`);
+  if (t.armor < 1) row('被ダメ', `x${t.armor.toFixed(2)}`);
+  if (t.waveHeal > 0) row('戦間補給', `+${t.waveHeal}HP`);
+  if (t.thorns > 0) row('反射', `${t.thorns}`);
+
+  head('実績');
+  row('累計ダメージ', fmt(game.totalDamage), '#5dffa1');
+  row('撃破', fmt(game.kills));
+  row('Lv', `${t.level}`);
+  const elapsed = (performance.now() - game.runStart) / 1000;
+  row('経過時間', `${(elapsed / 60).toFixed(1)}分`);
+
+  ctx.restore();
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y,     x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x,     y + h, r);
+  ctx.arcTo(x,     y + h, x,     y,     r);
+  ctx.arcTo(x,     y,     x + w, y,     r);
+  ctx.closePath();
 }
 
 function drawTower() {
@@ -2077,7 +2209,9 @@ function clearShopUI() {
   const cw = document.querySelector('.cards-wrap');     if (cw) cw.remove();
   const sl = document.querySelector('.shop-list');      if (sl) sl.remove();
   const sh = document.querySelector('.shop-head');      if (sh) sh.remove();
-  // restore third button container if any (none in HTML)
+  const st = document.querySelector('.shop-tabs');      if (st) st.remove();
+  const bg = document.querySelector('.build-grid');     if (bg) bg.remove();
+  const tg = document.querySelector('.title-guide-btn');if (tg) tg.remove();
 }
 
 function showTitle() {
@@ -2091,12 +2225,78 @@ function showTitle() {
     <div class="stat"><div class="label">最高WAVE</div><div class="val">${meta.bestWave}</div></div>
     <div class="stat"><div class="label">累計撃破</div><div class="val">${fmt(meta.lifeKills)}</div></div>
   `;
+  // small guide link under stats
+  const link = document.createElement('button');
+  link.className = 'title-guide-btn';
+  link.textContent = 'ℹ ビルド指南を見る';
+  link.addEventListener('click', () => showBuildGuide());
+  overlayStats.parentNode.insertBefore(link, overlayStats.nextSibling);
+
   overlayMain.textContent  = 'スタート';
   overlayMain.style.display = '';
   overlaySub.style.display  = '';
   overlaySub.textContent    = '永続強化';
   overlayMain.onclick = () => newGame();
   overlaySub.onclick  = () => showShop();
+}
+
+const BUILD_GUIDES = [
+  {
+    icon:'⚡',
+    name:'連射ビルド',
+    target:'雑魚を一掃したい人向け',
+    pickList:'連射速度 / マルチショット / クリ率 / クリ倍率 / 火力',
+    note:'マルチが伸びるほど多方向同時射撃ができ、隙間敵を許さない。クリ倍率も乗せて溶かす王道型。',
+  },
+  {
+    icon:'🚀',
+    name:'ミサイル砲台',
+    target:'ボスとエリートを瞬殺したい人向け',
+    pickList:'ミサイル / 爆発弾 / ボス特効 / 火力',
+    note:'追尾爆発で常に最強HPを狙う。爆発弾と組み合わせて二重AoE。後半のタンクとボスに刺さる。',
+  },
+  {
+    icon:'⌁',
+    name:'雷撃連鎖',
+    target:'群れラッシュ・エリート部隊が好きな人向け',
+    pickList:'雷撃 / 連鎖雷 / 氷結弾 / 周回ドローン',
+    note:'雷撃は鎖が伸びるほど一発で全体に被ダメ。氷結で足止めしつつ周回ドローンが取り残しを狩る。',
+  },
+  {
+    icon:'❀',
+    name:'近接オーラ',
+    target:'防御を厚くして長期戦したい人向け',
+    pickList:'パルス / 死の波動 / 周回ドローン / 自己修復 / 装甲',
+    note:'コア周囲が常時ダメージ域。回復・装甲・反射で殴られても痛くない。エンドレス向き。',
+  },
+];
+
+function showBuildGuide() {
+  clearShopUI();
+  overlay.classList.remove('hidden');
+  overlayTitle.textContent = 'ビルド指南';
+  overlayText.textContent  = 'レベルアップ時にどの強化を積むかの方針例';
+  overlayStats.innerHTML   = '';
+
+  const grid = document.createElement('div');
+  grid.className = 'build-grid';
+  for (const b of BUILD_GUIDES) {
+    const card = document.createElement('div');
+    card.className = 'build-card';
+    card.innerHTML = `
+      <div class="bc-head"><span class="bc-ico">${b.icon}</span><span class="bc-name">${b.name}</span></div>
+      <div class="bc-target">${b.target}</div>
+      <div class="bc-picks"><span class="bc-label">推奨</span> ${b.pickList}</div>
+      <div class="bc-note">${b.note}</div>
+    `;
+    grid.appendChild(card);
+  }
+  overlayStats.parentNode.insertBefore(grid, overlayStats.nextSibling);
+
+  overlayMain.style.display = 'none';
+  overlaySub.style.display  = '';
+  overlaySub.textContent    = '戻る';
+  overlaySub.onclick = () => showTitle();
 }
 
 function showShop() {
@@ -2113,9 +2313,22 @@ function showShop() {
     <span class="shop-coin">◆ ${fmt(meta.points)}</span>`;
   overlayStats.parentNode.insertBefore(head, overlayStats);
 
+  // tab buttons
+  const tabs = document.createElement('div');
+  tabs.className = 'shop-tabs';
+  for (const tab of META_TABS) {
+    const b = document.createElement('button');
+    b.className = 'shop-tab' + (tab.id === currentShopTab ? ' active' : '');
+    b.textContent = tab.label;
+    b.addEventListener('click', () => { currentShopTab = tab.id; showShop(); });
+    tabs.appendChild(b);
+  }
+  overlayStats.parentNode.insertBefore(tabs, overlayStats.nextSibling);
+
   const list = document.createElement('div');
   list.className = 'shop-list';
-  for (const u of META_UPGRADES) {
+  const filtered = META_UPGRADES.filter(u => u.cat === currentShopTab);
+  for (const u of filtered) {
     const lv = metaLv(u.id);
     const isMax = lv >= u.max;
     const cost  = isMax ? 0 : metaCost(u);
@@ -2139,7 +2352,7 @@ function showShop() {
     }
     list.appendChild(row);
   }
-  overlayStats.parentNode.insertBefore(list, overlayStats.nextSibling);
+  overlayStats.parentNode.insertBefore(list, tabs.nextSibling);
 
   overlayMain.style.display = 'none';
   overlaySub.style.display  = '';
@@ -2193,6 +2406,11 @@ btnMute.addEventListener('click', () => {
   const m = Sfx.toggle();
   const span = btnMute.querySelector('#muteIcon') || btnMute;
   span.textContent = m ? '🔈' : '🔊';
+});
+btnStats.addEventListener('click', () => {
+  if (!game) return;
+  game.statsOpen = !game.statsOpen;
+  btnStats.style.background = game.statsOpen ? '#1e3a6b' : '';
 });
 // init mute icon
 btnMute.textContent = Sfx.isMuted() ? '🔈' : '🔊';
