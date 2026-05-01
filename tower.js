@@ -119,9 +119,18 @@ const META_UPGRADES = [
   { id:'crit',   ico:'✦', name:'初期クリ率', desc:'クリ率 +2%/Lv',
     max:8,  cost:lv => 50 + lv * 22,
     apply:(lv, t) => { t.critChance += 0.02 * lv; } },
-  { id:'regen',  ico:'✚', name:'自己修復',  desc:'HP回復 +0.05/秒 /Lv',
-    max:10, cost:lv => 70 + lv * 30,
-    apply:(lv, t) => { t.regen += 0.05 * lv; } },
+  { id:'regen',  ico:'✚', name:'自己修復',  desc:'HP回復 +0.08/秒 /Lv',
+    max:30, cost:lv => 60 + lv * 22,
+    apply:(lv, t) => { t.regen += 0.08 * lv; } },
+  { id:'armor',  ico:'⛨', name:'装甲',     desc:'被ダメ -4%/Lv（乗算）',
+    max:15, cost:lv => 80 + lv * 28,
+    apply:(lv, t) => { t.armor *= Math.pow(0.96, lv); } },
+  { id:'waveheal',ico:'⚕', name:'戦間補給', desc:'ウェーブクリア毎に HP +1/Lv',
+    max:10, cost:lv => 90 + lv * 30,
+    apply:(lv, t) => { t.waveHeal += lv; } },
+  { id:'thorns', ico:'⚝', name:'反射装甲', desc:'被弾時に攻撃した敵にダメージ反射 +1/Lv',
+    max:8,  cost:lv => 100 + lv * 40,
+    apply:(lv, t) => { t.thorns += lv; } },
   { id:'magnet', ico:'⌬', name:'磁場',     desc:'XP回収範囲 +20%/Lv',
     max:5,  cost:lv => 40 + lv * 18,
     apply:(lv, t) => { t.magnetRange *= 1 + 0.20 * lv; } },
@@ -396,6 +405,9 @@ function newGame() {
       deathWaveCd: 0,
       garlicLv: 0,
       garlicCd: 0,
+      armor: 1,         // multiplier on damage taken (1 = no reduction)
+      waveHeal: 0,      // HP healed per wave clear
+      thorns: 0,        // damage reflected back to attacker
     },
     enemies: [],
     bullets: [],
@@ -821,7 +833,7 @@ function update(dt) {
 
     // reach core
     if (d < t.r + e.r) {
-      damageCore(e.damage);
+      damageCore(e.damage, e);
       e.dead = true;
     }
   }
@@ -1173,13 +1185,19 @@ function onEnemyKilled(e) {
   }
 }
 
-function damageCore(amount) {
+function damageCore(amount, attacker) {
   const t = game.tower;
-  t.hp -= amount;
+  const reduced = amount * (t.armor || 1);
+  t.hp -= reduced;
   game.flash = Math.max(game.flash, 0.28);
-  addShake(4 + amount * 1.5);
+  addShake(4 + reduced * 1.5);
   Sfx.coreHit();
   spawnParticles(t.x, t.y, '#ff4f7a', 14, [80, 260], [0.3, 0.7]);
+  // thorns: reflect to attacker
+  if (attacker && !attacker.dead && t.thorns > 0) {
+    applyDamage(attacker, t.thorns);
+    spawnDamageNumber(attacker.x, attacker.y - attacker.r, `↻${t.thorns}`, '#ffd24a', 12);
+  }
   if (t.hp <= 0) { t.hp = 0; Sfx.gameOver(); gameOver(); }
 }
 
@@ -1288,13 +1306,29 @@ function spawnChild(parent, angle, off) {
   });
 }
 
-function fireBullet(t, target) {
+function fireBullet(t, primaryTarget) {
   Sfx.shoot();
-  const baseAng = Math.atan2(target.y - t.y, target.x - t.x);
   const n = Math.max(1, t.multishot | 0);
+  // collect live enemies sorted by distance to tower
+  const live = [];
+  for (const e of game.enemies) if (!e.dead) live.push(e);
+  if (live.length === 0) return;
+  live.sort((a, b) => {
+    const da = (a.x - t.x) * (a.x - t.x) + (a.y - t.y) * (a.y - t.y);
+    const db = (b.x - t.x) * (b.x - t.x) + (b.y - t.y) * (b.y - t.y);
+    return da - db;
+  });
+  // each bullet picks a unique target; if more bullets than enemies, duplicates spread slightly
   for (let i = 0; i < n; i++) {
-    const t01 = (n === 1) ? 0 : (i / (n - 1)) - 0.5;
-    const ang = baseAng + t01 * t.spreadAngle * (n - 1);
+    let target, spread = 0;
+    if (i < live.length) {
+      target = live[i];
+    } else {
+      target = live[i % live.length];
+      const dup = Math.floor(i / live.length);
+      spread = (dup % 2 === 0 ? 1 : -1) * Math.ceil(dup / 2) * 0.18;
+    }
+    const ang = Math.atan2(target.y - t.y, target.x - t.x) + spread;
     const isCrit = Math.random() < t.critChance;
     const dmg = t.damage * (isCrit ? t.critMul : 1);
     const sp = t.bulletSpeed;
@@ -1317,6 +1351,14 @@ function fireBullet(t, target) {
 }
 
 function nextWave() {
+  // wave-clear auto-heal
+  const t = game.tower;
+  if (t.waveHeal > 0 && t.hp < t.maxHp) {
+    const heal = Math.min(t.waveHeal, t.maxHp - t.hp);
+    t.hp += heal;
+    spawnDamageNumber(t.x, t.y - t.r - 6, `+${heal}`, '#5dffa1', 16);
+    spawnParticles(t.x, t.y, '#5dffa1', 12, [60, 180], [0.3, 0.6]);
+  }
   game.wave++;
   game.waveQueue = rollWave(game.wave);
   game.waveTimer = 0;
@@ -1645,7 +1687,7 @@ function render() {
   ctx.font = '700 10px -apple-system,sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'bottom';
-  ctx.fillText('v7 — flashy mode', 8, H - 6);
+  ctx.fillText('v8 — multi-target & defense', 8, H - 6);
   ctx.restore();
 }
 
