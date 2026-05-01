@@ -10,6 +10,21 @@ const MUTE_KEY = 'core-defense-mute-v1';
 const rand   = (a, b) => a + Math.random() * (b - a);
 const pick   = arr => arr[(Math.random() * arr.length) | 0];
 
+// ---------- Big-number formatter ----------
+const FMT_UNITS = ['', 'K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No', 'Dc'];
+function fmt(n) {
+  if (n == null || isNaN(n)) return '0';
+  if (n < 0) return '-' + fmt(-n);
+  if (n < 1000) return Math.round(n).toString();
+  let i = 0;
+  while (n >= 1000 && i < FMT_UNITS.length - 1) { n /= 1000; i++; }
+  return (n < 10 ? n.toFixed(2) : n < 100 ? n.toFixed(1) : Math.floor(n).toString()) + FMT_UNITS[i];
+}
+function fmtDmg(v) {
+  if (v < 10) return v.toFixed(1);
+  return fmt(v);
+}
+
 // ---------- Audio (synthed via WebAudio) ----------
 const Sfx = (() => {
   let ctx = null, master = null;
@@ -88,7 +103,59 @@ const Sfx = (() => {
 
 // ---------- Persistent meta progress ----------
 function defaultMeta() {
-  return { points: 0, lifeKills: 0, bestWave: 0, totalRuns: 0, upgrades: {} };
+  return {
+    points: 0, lifeKills: 0, bestWave: 0, totalRuns: 0,
+    bestCombo: 0, totalBosses: 0,
+    upgrades: {}, milestones: {},
+  };
+}
+
+// ---------- Lifetime milestones (one-time meta-point bonuses) ----------
+const MILESTONES = [
+  // wave milestones
+  { id:'w10',  text:'WAVE 10 到達',    when: m => m.bestWave >= 10,    reward: 100  },
+  { id:'w25',  text:'WAVE 25 到達',    when: m => m.bestWave >= 25,    reward: 500  },
+  { id:'w50',  text:'WAVE 50 到達',    when: m => m.bestWave >= 50,    reward: 2500 },
+  { id:'w100', text:'WAVE 100 到達',   when: m => m.bestWave >= 100,   reward: 12000 },
+  { id:'w200', text:'WAVE 200 到達',   when: m => m.bestWave >= 200,   reward: 60000 },
+  { id:'w500', text:'WAVE 500 到達',   when: m => m.bestWave >= 500,   reward: 400000 },
+  // kill milestones
+  { id:'k100', text:'累計撃破 100',    when: m => m.lifeKills >= 100,    reward: 80   },
+  { id:'k1k',  text:'累計撃破 1,000',  when: m => m.lifeKills >= 1000,   reward: 600  },
+  { id:'k10k', text:'累計撃破 10,000', when: m => m.lifeKills >= 10000,  reward: 5000 },
+  { id:'k100k',text:'累計撃破 100,000',when: m => m.lifeKills >= 100000, reward: 40000 },
+  { id:'k1m',  text:'累計撃破 1,000,000', when: m => m.lifeKills >= 1e6, reward: 300000 },
+  // combo milestones
+  { id:'c50',  text:'最高コンボ 50',   when: m => m.bestCombo >= 50,   reward: 200  },
+  { id:'c100', text:'最高コンボ 100',  when: m => m.bestCombo >= 100,  reward: 800  },
+  { id:'c250', text:'最高コンボ 250',  when: m => m.bestCombo >= 250,  reward: 4000 },
+  { id:'c500', text:'最高コンボ 500',  when: m => m.bestCombo >= 500,  reward: 20000 },
+  // boss milestones
+  { id:'b10',  text:'ボス 10体撃破',   when: m => m.totalBosses >= 10,  reward: 400  },
+  { id:'b50',  text:'ボス 50体撃破',   when: m => m.totalBosses >= 50,  reward: 4000 },
+  { id:'b200', text:'ボス 200体撃破',  when: m => m.totalBosses >= 200, reward: 30000 },
+];
+
+function checkMilestones() {
+  let earnedAny = false;
+  for (const ms of MILESTONES) {
+    if (meta.milestones[ms.id]) continue;
+    if (ms.when(meta)) {
+      meta.milestones[ms.id] = true;
+      meta.points += ms.reward;
+      earnedAny = true;
+      // toast / banner
+      showBanner(`🏆 ${ms.text}`, `+${fmt(ms.reward)} ◆`);
+      Sfx.coin();
+      pushFlashMaybe('#ffd24a', 0.4);
+    }
+  }
+  if (earnedAny) saveMeta();
+}
+
+// pushFlash safe wrapper (game might not exist on title screen)
+function pushFlashMaybe(c, s) {
+  if (game && game.flashes) game.flashes.push({ color: c, life: s, maxLife: s });
 }
 function loadMeta() {
   try {
@@ -102,52 +169,55 @@ function saveMeta() {
 }
 let meta = loadMeta();
 
-// ---------- Meta upgrades (permanent across runs) ----------
+// ---------- Meta upgrades (permanent, multi-tier with exponential cost) ----------
+// Cost grows multiplicatively so each tier costs dramatically more than the last,
+// while per-Lv effects compound — this is the "number-go-up" loop.
+const expCost = (base, growth) => lv => Math.round(base * Math.pow(growth, lv));
 const META_UPGRADES = [
-  { id:'dmg',    ico:'⚔', name:'初期火力',  desc:'開始時ダメージ +5%/Lv',
-    max:20, cost:lv => 30 + lv * 18,
-    apply:(lv, t) => { t.damage *= 1 + 0.05 * lv; } },
-  { id:'rate',   ico:'⚡', name:'初期連射',  desc:'開始時 攻撃間隔 -3%/Lv',
-    max:15, cost:lv => 40 + lv * 22,
-    apply:(lv, t) => { t.fireInterval *= Math.pow(0.97, lv); } },
-  { id:'hp',     ico:'♥', name:'コア強度',  desc:'最大HP +1/Lv',
-    max:10, cost:lv => 60 + lv * 38,
+  { id:'dmg',    ico:'⚔', name:'初期火力',    desc:'ダメージ ×1.04/Lv（複利）',
+    max:99, cost:expCost(30, 1.16),
+    apply:(lv, t) => { t.damage *= Math.pow(1.04, lv); } },
+  { id:'rate',   ico:'⚡', name:'初期連射',    desc:'攻撃間隔 ×0.985/Lv',
+    max:99, cost:expCost(40, 1.16),
+    apply:(lv, t) => { t.fireInterval *= Math.pow(0.985, lv); } },
+  { id:'hp',     ico:'♥', name:'コア強度',    desc:'最大HP +1/Lv',
+    max:99, cost:expCost(50, 1.18),
     apply:(lv, t) => { t.maxHp += lv; t.hp = t.maxHp; } },
-  { id:'speed',  ico:'➹', name:'弾速',     desc:'弾速 +5%/Lv',
-    max:10, cost:lv => 30 + lv * 14,
-    apply:(lv, t) => { t.bulletSpeed *= 1 + 0.05 * lv; } },
-  { id:'crit',   ico:'✦', name:'初期クリ率', desc:'クリ率 +2%/Lv',
-    max:8,  cost:lv => 50 + lv * 22,
-    apply:(lv, t) => { t.critChance += 0.02 * lv; } },
-  { id:'regen',  ico:'✚', name:'自己修復',  desc:'HP回復 +0.08/秒 /Lv',
-    max:30, cost:lv => 60 + lv * 22,
-    apply:(lv, t) => { t.regen += 0.08 * lv; } },
-  { id:'armor',  ico:'⛨', name:'装甲',     desc:'被ダメ -4%/Lv（乗算）',
-    max:15, cost:lv => 80 + lv * 28,
-    apply:(lv, t) => { t.armor *= Math.pow(0.96, lv); } },
-  { id:'waveheal',ico:'⚕', name:'戦間補給', desc:'ウェーブクリア毎に HP +1/Lv',
-    max:10, cost:lv => 90 + lv * 30,
+  { id:'speed',  ico:'➹', name:'弾速',       desc:'弾速 ×1.03/Lv',
+    max:99, cost:expCost(25, 1.14),
+    apply:(lv, t) => { t.bulletSpeed *= Math.pow(1.03, lv); } },
+  { id:'crit',   ico:'✦', name:'初期クリ率',  desc:'クリ率 +1%/Lv',
+    max:60, cost:expCost(60, 1.16),
+    apply:(lv, t) => { t.critChance += 0.01 * lv; } },
+  { id:'regen',  ico:'✚', name:'自己修復',    desc:'HP回復 +0.05/秒/Lv',
+    max:99, cost:expCost(50, 1.16),
+    apply:(lv, t) => { t.regen += 0.05 * lv; } },
+  { id:'armor',  ico:'⛨', name:'装甲',       desc:'被ダメ ×0.985/Lv（乗算）',
+    max:80, cost:expCost(70, 1.17),
+    apply:(lv, t) => { t.armor *= Math.pow(0.985, lv); } },
+  { id:'waveheal',ico:'⚕', name:'戦間補給',   desc:'ウェーブ毎にHP +1/Lv',
+    max:50, cost:expCost(80, 1.17),
     apply:(lv, t) => { t.waveHeal += lv; } },
-  { id:'thorns', ico:'⚝', name:'反射装甲', desc:'被弾時に攻撃した敵にダメージ反射 +1/Lv',
-    max:8,  cost:lv => 100 + lv * 40,
+  { id:'thorns', ico:'⚝', name:'反射装甲',    desc:'被弾時に反射 +1/Lv',
+    max:50, cost:expCost(80, 1.17),
     apply:(lv, t) => { t.thorns += lv; } },
-  { id:'magnet', ico:'⌬', name:'磁場',     desc:'XP回収範囲 +20%/Lv',
-    max:5,  cost:lv => 40 + lv * 18,
-    apply:(lv, t) => { t.magnetRange *= 1 + 0.20 * lv; } },
-  { id:'xp',     ico:'★', name:'熟練',     desc:'EXP取得 +6%/Lv',
-    max:10, cost:lv => 50 + lv * 24,
-    apply:(lv, t, g) => { g.xpMul *= 1 + 0.06 * lv; } },
-  { id:'meta',   ico:'◆', name:'勲章',     desc:'終了時メタ点 +10%/Lv',
-    max:10, cost:lv => 80 + lv * 36,
-    apply:(lv, _t, g) => { g.metaMul *= 1 + 0.10 * lv; } },
-  { id:'startlv',ico:'⇧', name:'先制強化',  desc:'ラン開始時にLvを+1',
-    max:3,  cost:lv => 120 + lv * 80,
+  { id:'magnet', ico:'⌬', name:'磁場',       desc:'XP回収範囲 ×1.10/Lv',
+    max:30, cost:expCost(35, 1.13),
+    apply:(lv, t) => { t.magnetRange *= Math.pow(1.10, lv); } },
+  { id:'xp',     ico:'★', name:'熟練',       desc:'EXP取得 ×1.05/Lv',
+    max:60, cost:expCost(45, 1.15),
+    apply:(lv, t, g) => { g.xpMul *= Math.pow(1.05, lv); } },
+  { id:'meta',   ico:'◆', name:'勲章',       desc:'終了時メタ点 ×1.10/Lv',
+    max:60, cost:expCost(80, 1.17),
+    apply:(lv, _t, g) => { g.metaMul *= Math.pow(1.10, lv); } },
+  { id:'startlv',ico:'⇧', name:'先制強化',    desc:'ラン開始時にLv+1/Lv',
+    max:20, cost:expCost(150, 1.55),
     apply:(lv, _t, g) => { g.pendingLevelUps += lv; } },
-  { id:'reroll', ico:'⟲', name:'リロール所持', desc:'ラン開始時のリロール +1/Lv',
-    max:5,  cost:lv => 90 + lv * 50,
+  { id:'reroll', ico:'⟲', name:'リロール所持', desc:'開始リロール +1/Lv',
+    max:30, cost:expCost(80, 1.30),
     apply:(lv, _t, g) => { g.rerollsLeft += lv; } },
-  { id:'orbital',ico:'◯', name:'初期ドローン', desc:'ラン開始時に周回ドローン +1',
-    max:2,  cost:lv => 200 + lv * 150,
+  { id:'orbital',ico:'◯', name:'初期ドローン', desc:'開始時に周回ドローン +1/Lv',
+    max:8,  cost:expCost(220, 1.55),
     apply:(lv, t) => { t.orbitalCount += lv; } },
 ];
 
@@ -163,8 +233,13 @@ function applyMetaToRun(g) {
 }
 
 function runEndPoints(g) {
-  // (wave-1 * 8 + kills * 0.4) * metaMul, floored.
-  const base = Math.max(0, (g.wave - 1) * 8 + g.kills * 0.4);
+  // wave reward grows quadratically so high waves are juicy
+  const w = Math.max(0, g.wave - 1);
+  const waveReward = 8 * w + 0.6 * w * w;
+  const killReward = g.kills * 0.4;
+  const bossReward = g.bossesKilled * 25;
+  const comboReward = (g.combo || 0) * 0.3;
+  const base = waveReward + killReward + bossReward + comboReward;
   return Math.max(0, Math.floor(base * (g.metaMul || 1)));
 }
 
@@ -1072,7 +1147,7 @@ function applyDamage(e, dmg, isCrit) {
   }
   if (dmg > 0) {
     const col = isCrit ? '#ffd24a' : '#fff7a8';
-    const sz  = isCrit ? 16 : 12;
+    const sz  = isCrit ? 17 : 13;
     spawnDamageNumber(e.x, e.y - e.r * 0.7, fmtDmg(dmg), col, sz);
   }
   if (e.hp <= 0) {
@@ -1081,9 +1156,6 @@ function applyDamage(e, dmg, isCrit) {
   }
 }
 
-function fmtDmg(v) {
-  return (v >= 10 ? Math.round(v) : v.toFixed(1)).toString();
-}
 
 function applySlow(e, factor, dur) {
   e.slowFactor = factor;
@@ -1142,9 +1214,17 @@ function doChain(srcEnemy, baseDmg, jumps) {
 function onEnemyKilled(e) {
   game.kills++;
   game.score += e.score;
+  if (e.boss) {
+    game.bossesKilled++;
+    meta.totalBosses = (meta.totalBosses || 0) + 1;
+  }
+  meta.lifeKills++;
   // combo
   game.combo += 1;
   game.comboTimer = 1.6;
+  if (game.combo > (meta.bestCombo || 0)) meta.bestCombo = game.combo;
+  // milestone check (cheap, ~17 entries)
+  checkMilestones();
   if (e.boss) Sfx.bossDown(); else Sfx.kill();
   // edge flash matching enemy color
   if (e.boss) {
@@ -1687,7 +1767,7 @@ function render() {
   ctx.font = '700 10px -apple-system,sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'bottom';
-  ctx.fillText('v8 — multi-target & defense', 8, H - 6);
+  ctx.fillText('v9 — number-go-up loop', 8, H - 6);
   ctx.restore();
 }
 
@@ -1892,7 +1972,7 @@ function polygon(x, y, r, sides, rot) {
 function updateHud() {
   if (!game) return;
   hudWave.textContent  = game.wave;
-  hudScore.textContent = game.score;
+  hudScore.textContent = fmt(game.score);
   hudEnemy.textContent = game.enemies.length;
   const pct = Math.max(0, game.tower.hp / game.tower.maxHp);
   hudHp.style.width = (pct * 100).toFixed(1) + '%';
@@ -1915,9 +1995,9 @@ function showTitle() {
   overlayTitle.textContent = 'CORE DEFENSE';
   overlayText.textContent  = '中央コアを守れ。360°から押し寄せる敵を自動で迎撃する。';
   overlayStats.innerHTML = `
-    <div class="stat"><div class="label">メタ点</div><div class="val">${meta.points}</div></div>
+    <div class="stat"><div class="label">メタ点</div><div class="val">${fmt(meta.points)}</div></div>
     <div class="stat"><div class="label">最高WAVE</div><div class="val">${meta.bestWave}</div></div>
-    <div class="stat"><div class="label">累計撃破</div><div class="val">${meta.lifeKills}</div></div>
+    <div class="stat"><div class="label">累計撃破</div><div class="val">${fmt(meta.lifeKills)}</div></div>
   `;
   overlayMain.textContent  = 'スタート';
   overlayMain.style.display = '';
@@ -1937,8 +2017,8 @@ function showShop() {
 
   const head = document.createElement('div');
   head.className = 'shop-head';
-  head.innerHTML = `<span>累計撃破: <b>${meta.lifeKills}</b> / 最高WAVE: <b>${meta.bestWave}</b></span>
-    <span class="shop-coin">◆ ${meta.points}</span>`;
+  head.innerHTML = `<span>累計撃破: <b>${fmt(meta.lifeKills)}</b> / 最高WAVE: <b>${meta.bestWave}</b> / 最高COMBO: <b>${meta.bestCombo || 0}</b></span>
+    <span class="shop-coin">◆ ${fmt(meta.points)}</span>`;
   overlayStats.parentNode.insertBefore(head, overlayStats);
 
   const list = document.createElement('div');
@@ -1954,7 +2034,7 @@ function showShop() {
       <div class="ds">${u.desc}</div>
       ${isMax
         ? `<div class="lv" style="text-align:right">MAX</div>`
-        : `<button class="buy" ${meta.points < cost ? 'disabled' : ''}>◆ ${cost}</button>`}
+        : `<button class="buy" ${meta.points < cost ? 'disabled' : ''}>◆ ${fmt(cost)}</button>`}
     `;
     if (!isMax) {
       row.querySelector('.buy').addEventListener('click', () => {
@@ -1979,12 +2059,13 @@ function gameOver() {
   if (mode === 'gameover') return;
   mode = 'gameover';
   clearShopUI();
-  // accumulate stats
-  meta.lifeKills += game.kills;
+  // accumulate stats (lifeKills is incremented per-kill now)
   meta.totalRuns = (meta.totalRuns || 0) + 1;
   if (game.wave > meta.bestWave) meta.bestWave = game.wave;
   const earned = runEndPoints(game);
   meta.points += earned;
+  // milestone check on final stats
+  checkMilestones();
   saveMeta();
 
   overlay.classList.remove('hidden');
@@ -1992,9 +2073,9 @@ function gameOver() {
   overlayText.textContent  = 'コアが破壊された';
   overlayStats.innerHTML = `
     <div class="stat"><div class="label">WAVE</div><div class="val">${game.wave}</div></div>
-    <div class="stat"><div class="label">KILLS</div><div class="val">${game.kills}</div></div>
-    <div class="stat"><div class="label">SCORE</div><div class="val">${game.score}</div></div>
-    <div class="stat"><div class="label">獲得◆</div><div class="val">+${earned}</div></div>
+    <div class="stat"><div class="label">KILLS</div><div class="val">${fmt(game.kills)}</div></div>
+    <div class="stat"><div class="label">SCORE</div><div class="val">${fmt(game.score)}</div></div>
+    <div class="stat"><div class="label">獲得◆</div><div class="val">+${fmt(earned)}</div></div>
   `;
   overlayMain.textContent  = 'もう一度';
   overlayMain.style.display = '';
