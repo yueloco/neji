@@ -258,6 +258,10 @@ const ENEMY_TYPES = {
   charger:  { color:'#ffaa3a', r:46, hp:130, speed:55, damage:6, score:340, boss:true },
   artillery:{ color:'#a06eff', r:60, hp:110, speed:14, damage:4, score:360, boss:true,
               shotCd:1.6,  projSpeed:170, projDmg:1, multishot:9, spread:1.4, keepDist:260 },
+  splitboss:{ color:'#5dffa1', r:50, hp:140, speed:30, damage:5, score:420, boss:true,
+              splits:5, splitChild:'tank' },
+  summoner: { color:'#ff5dc4', r:52, hp:120, speed:24, damage:5, score:460, boss:true,
+              summonType:'fast', summonCount:4, summonCd:2.6, keepDist:240 },
 };
 
 // ---------- Run-only upgrades (chosen at level up) ----------
@@ -347,14 +351,34 @@ function applyUpgrade(u) {
 function rollWave(wave) {
   const queue = [];
   if (wave % 5 === 0) {
-    // boss wave: rotate variants every 5 waves
-    const bossPool = ['boss', 'charger', 'artillery'];
+    // boss wave: rotate through 5 variants
+    const bossPool = ['boss', 'charger', 'artillery', 'splitboss', 'summoner'];
     const bossType = bossPool[((wave / 5 | 0) - 1) % bossPool.length];
     queue.push({ type: bossType, delay:1.2 });
     const minionCount = 4 + Math.floor(wave / 5) * 2;
     const minionPool = wave >= 15 ? ['grunt','fast','splitter'] : ['grunt','fast'];
     for (let i = 0; i < minionCount; i++) {
       queue.push({ type: pick(minionPool), delay: 1.6 + i * 0.7 });
+    }
+    return queue;
+  }
+  // ----- swarm rush: wave 13, 23, 33, ... -----
+  if (wave >= 13 && wave % 10 === 3) {
+    const count = 28 + wave;
+    for (let i = 0; i < count; i++) {
+      const type = Math.random() < 0.65 ? 'fast' : 'grunt';
+      queue.push({ type, delay: 0.4 + i * 0.18 });
+    }
+    return queue;
+  }
+  // ----- elite squad: wave 17, 27, 37, ... (elite roll auto-applies) -----
+  if (wave >= 17 && wave % 10 === 7) {
+    const pool = ['grunt'];
+    if (wave >= 18) pool.push('fast');
+    if (wave >= 18) pool.push('tank');
+    const count = 8 + Math.floor(wave / 4);
+    for (let i = 0; i < count; i++) {
+      queue.push({ type: pick(pool), delay: 0.6 + i * 0.6 });
     }
     return queue;
   }
@@ -525,33 +549,62 @@ function newGame() {
 }
 
 // ---------- Enemy spawn ----------
-function spawnEnemy(type, originAngle) {
+function isEliteRoll(wave) {
+  if (wave >= 17 && wave % 10 === 7) return Math.random() < 0.85;
+  if (wave >= 30) return Math.random() < Math.min(0.25, 0.05 + (wave - 30) * 0.005);
+  return false;
+}
+
+function spawnEnemy(type, originAngle, atX, atY) {
   const cfg  = ENEMY_TYPES[type];
   const wave = game.wave;
-  const a = originAngle != null ? originAngle : Math.random() * TWO_PI;
-  const dist = Math.max(W, H) * 0.6 + 40;
-  const x = CX + Math.cos(a) * dist;
-  const y = CY + Math.sin(a) * dist;
+  let x, y;
+  if (atX != null) {
+    x = atX; y = atY;
+  } else {
+    const a = originAngle != null ? originAngle : Math.random() * TWO_PI;
+    const dist = Math.max(W, H) * 0.6 + 40;
+    x = CX + Math.cos(a) * dist;
+    y = CY + Math.sin(a) * dist;
+  }
 
-  // scaling: hp grows ~6%/wave, speed +1%/wave (capped)
+  // scaling: hp grows ~7%/wave, speed +1%/wave (capped)
   const hpScale    = 1 + (wave - 1) * 0.07;
   const speedScale = 1 + Math.min(0.6, (wave - 1) * 0.012);
-  const hp     = Math.round(cfg.hp     * hpScale);
-  const shield = cfg.shield ? Math.round(cfg.shield * hpScale) : 0;
-  const speed  = cfg.speed  * speedScale;
+  let hp     = Math.round(cfg.hp     * hpScale);
+  let shield = cfg.shield ? Math.round(cfg.shield * hpScale) : 0;
+  let speed  = cfg.speed  * speedScale;
+  let radius = cfg.r;
+  let score  = cfg.score;
+
+  // elite roll (non-bosses only past wave 30 / on elite waves)
+  const elite = !cfg.boss && isEliteRoll(wave);
+  if (elite) {
+    hp     = Math.round(hp * 3);
+    shield = Math.round(shield * 2);
+    speed  = speed * 1.35;
+    radius = radius + 3;
+    score  = Math.round(score * 3);
+  }
 
   game.enemies.push({
     x, y,
     kind: type,
-    r: cfg.r,
+    r: radius,
     color: cfg.color,
     hp, maxHp: hp,
     shield, maxShield: shield,
     speed,
     damage: cfg.damage,
-    score:  cfg.score,
+    score,
     boss:   !!cfg.boss,
+    elite,
     splits: cfg.splits || 0,
+    splitChild: cfg.splitChild || null,
+    summonType: cfg.summonType || null,
+    summonCount: cfg.summonCount || 1,
+    summonCd: cfg.summonCd || 0,
+    summonTimer: cfg.summonCd ? cfg.summonCd * 0.6 + Math.random() * cfg.summonCd : 0,
     ranged: !!cfg.ranged,
     keepDist: cfg.keepDist || 0,
     shotCd:   cfg.shotCd ? cfg.shotCd * 0.6 + Math.random() * cfg.shotCd : 0,
@@ -890,6 +943,20 @@ function update(dt) {
     }
     if (e.flash > 0) e.flash -= dt;
 
+    // summoner: spawn minions periodically
+    if (e.summonType && e.summonCd > 0) {
+      e.summonTimer -= dt;
+      if (e.summonTimer <= 0) {
+        for (let i = 0; i < e.summonCount; i++) {
+          const sa = Math.random() * TWO_PI;
+          const off = e.r + 14 + Math.random() * 28;
+          spawnEnemy(e.summonType, null, e.x + Math.cos(sa) * off, e.y + Math.sin(sa) * off);
+        }
+        e.summonTimer = e.summonCd;
+        spawnParticles(e.x, e.y, e.color, 18, [60, 200], [0.3, 0.6]);
+        addShake(2);
+      }
+    }
     // shooting
     if (e.shotInterval > 0) {
       e.shotCd -= dt;
@@ -1260,8 +1327,19 @@ function onEnemyKilled(e) {
   if (e.splits > 0) {
     for (let s = 0; s < e.splits; s++) {
       const a = Math.random() * TWO_PI;
-      spawnChild(e, a, e.r + 6);
+      const off = e.r + 8;
+      if (e.splitChild) {
+        // boss splitters spawn full-grade children at the boss position
+        spawnEnemy(e.splitChild, null, e.x + Math.cos(a) * off, e.y + Math.sin(a) * off);
+      } else {
+        spawnChild(e, a, off);
+      }
     }
+  }
+  // elite drops more gems
+  if (e.elite) {
+    const extra = Math.max(2, Math.round(e.score * 0.06));
+    for (let i = 0; i < 3; i++) spawnGem(e.x, e.y, extra);
   }
 }
 
@@ -1767,7 +1845,7 @@ function render() {
   ctx.font = '700 10px -apple-system,sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'bottom';
-  ctx.fillText('v9 — number-go-up loop', 8, H - 6);
+  ctx.fillText('v10 — elites, swarms, more bosses', 8, H - 6);
   ctx.restore();
 }
 
@@ -1931,6 +2009,20 @@ function drawEnemy(e) {
     ctx.fill();
   }
   ctx.restore();
+
+  // elite rainbow rim
+  if (e.elite) {
+    const hue = (performance.now() / 6 + (e.x + e.y) * 0.1) % 360;
+    ctx.save();
+    ctx.strokeStyle = `hsl(${hue}, 100%, 65%)`;
+    ctx.shadowColor = `hsl(${hue}, 100%, 65%)`;
+    ctx.shadowBlur = 16;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.r + 5, 0, TWO_PI);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   // shield ring
   if (e.shield > 0) {
