@@ -458,6 +458,7 @@ window.addEventListener('resize', () => { resize(); initStars(); });
 
 // ---------- Background star field (purely cosmetic) ----------
 const stars = [];
+const auroras = [];
 function initStars() {
   stars.length = 0;
   const n = Math.max(60, Math.floor((W * H) / 12000));
@@ -469,6 +470,19 @@ function initStars() {
       tw: Math.random() * TWO_PI,
       twSpd: 0.5 + Math.random() * 1.4,
       drift: Math.random() * 0.3 + 0.05,
+    });
+  }
+  auroras.length = 0;
+  const palette = ['hsla(280,80%,60%,0.18)','hsla(200,80%,60%,0.18)','hsla(330,80%,60%,0.16)','hsla(160,80%,60%,0.14)'];
+  for (let i = 0; i < 4; i++) {
+    auroras.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      vx: (Math.random() - 0.5) * 6,
+      vy: (Math.random() - 0.5) * 6,
+      r: 200 + Math.random() * 220,
+      color: palette[i],
+      phase: Math.random() * TWO_PI,
     });
   }
 }
@@ -714,9 +728,23 @@ function fireLightning() {
     kind:'bolt',
     x1: start.x + (Math.random() - 0.5) * 30, y1: -20,
     x2: start.x, y2: start.y,
-    life:0.18, maxLife:0.18,
+    life:0.22, maxLife:0.22,
     dead:false,
   });
+  // small branch sparks from the strike point
+  for (let k = 0; k < 3; k++) {
+    const ba = Math.random() * TWO_PI;
+    const blen = 30 + Math.random() * 50;
+    game.chainLines.push({
+      kind:'bolt',
+      x1: start.x, y1: start.y,
+      x2: start.x + Math.cos(ba) * blen, y2: start.y + Math.sin(ba) * blen,
+      life:0.16, maxLife:0.16,
+      dead:false,
+    });
+  }
+  spawnParticles(start.x, start.y, '#a8f0ff', 12, [80, 240], [0.25, 0.5]);
+  pushFlashMaybe('#5ad6ff', 0.20);
   applyDamage(start, dmg);
   // chain from start
   let last = start;
@@ -1182,6 +1210,23 @@ function update(dt) {
   }
   g.dmgTexts = g.dmgTexts.filter(d => !d.dead);
 
+  // ----- Tower ambient energy particles -----
+  if (Math.random() < 0.7) {
+    const a = Math.random() * TWO_PI;
+    const speed = 30 + Math.random() * 40;
+    g.particles.push({
+      x: t.x + Math.cos(a) * t.r * 0.9,
+      y: t.y + Math.sin(a) * t.r * 0.9,
+      vx: Math.cos(a) * speed,
+      vy: Math.sin(a) * speed,
+      r: 1 + Math.random() * 1.4,
+      life: 0.55 + Math.random() * 0.5,
+      maxLife: 0.9,
+      color: Math.random() < 0.5 ? '#5ad6ff' : '#a8f0ff',
+      dead: false,
+    });
+  }
+
   // ----- Shake decay -----
   if (g.shake > 0) g.shake = Math.max(0, g.shake - dt * 24);
 
@@ -1230,7 +1275,13 @@ function applyDamage(e, dmg, isCrit) {
   e.flash = 0.12;
   game.totalDamage += dmg + shieldAbsorbed;
   if (isCrit) Sfx.crit(); else Sfx.hit();
-  spawnParticles(e.x, e.y, e.color, 3, [60, 180], [0.18, 0.4]);
+  // impact sparks (extra-juicy on crit)
+  if (isCrit) {
+    spawnParticles(e.x, e.y, '#ffd24a', 10, [120, 280], [0.25, 0.55]);
+    spawnParticles(e.x, e.y, '#ffffff', 4, [60, 160], [0.2, 0.4]);
+  } else {
+    spawnParticles(e.x, e.y, e.color, 4, [60, 200], [0.2, 0.45]);
+  }
   if (shieldAbsorbed > 0) {
     spawnDamageNumber(e.x, e.y - e.r * 0.5, fmtDmg(shieldAbsorbed), '#9ed4ff', 11);
   }
@@ -1335,11 +1386,22 @@ function onEnemyKilled(e) {
     }
   }
   if (e.boss) {
-    addShake(10);
-    spawnDamageNumber(e.x, e.y, 'BOSS DOWN', '#ffd24a', 22);
-    // boss death: shockwave + bonus particles
-    game.chainLines.push({ kind:'ring', x:e.x, y:e.y, r: e.r * 4, life:0.5, maxLife:0.5, dead:false });
-    spawnParticles(e.x, e.y, '#ffd24a', 30, [120, 420], [0.5, 1.1]);
+    addShake(14);
+    spawnDamageNumber(e.x, e.y, 'BOSS DOWN', '#ffd24a', 24);
+    // boss death: cascading shockwaves + flash + chunky particles
+    game.chainLines.push({ kind:'ring', x:e.x, y:e.y, r: e.r * 5, life:0.7, maxLife:0.7, dead:false });
+    setTimeout(() => {
+      if (!game) return;
+      game.chainLines.push({ kind:'ring', x:e.x, y:e.y, r: e.r * 7, life:0.5, maxLife:0.5, dead:false });
+    }, 160);
+    setTimeout(() => {
+      if (!game) return;
+      game.chainLines.push({ kind:'ring', x:e.x, y:e.y, r: e.r * 10, life:0.45, maxLife:0.45, dead:false });
+    }, 340);
+    spawnParticles(e.x, e.y, '#ffd24a', 60, [140, 520], [0.6, 1.4]);
+    spawnParticles(e.x, e.y, '#ffffff', 16, [60, 280], [0.4, 0.8]);
+    pushFlashMaybe('#ffffff', 0.7);
+    pushFlashMaybe('#ffd24a', 0.5);
   }
   // gems: bosses drop a swarm
   const gemValue = Math.max(1, Math.round(e.score * 0.1));
@@ -1539,6 +1601,18 @@ function nextWave() {
     spawnDamageNumber(t.x, t.y - t.r - 6, `+${heal}`, '#5dffa1', 16);
     spawnParticles(t.x, t.y, '#5dffa1', 12, [60, 180], [0.3, 0.6]);
   }
+  // celebration fireworks
+  for (let i = 0; i < 12; i++) {
+    setTimeout(() => {
+      if (!game) return;
+      const x = Math.random() * W;
+      const y = Math.random() * (H * 0.55) + H * 0.1;
+      const hue = Math.random() * 360;
+      const col = `hsl(${hue},90%,65%)`;
+      spawnParticles(x, y, col, 26, [120, 320], [0.6, 1.1]);
+      game.chainLines.push({ kind:'ring', x, y, r: 40, life:0.35, maxLife:0.35, dead:false });
+    }, i * 90);
+  }
   game.wave++;
   game.waveQueue = rollWave(game.wave);
   game.waveTimer = 0;
@@ -1554,6 +1628,28 @@ function nextWave() {
 // ---------- Render ----------
 function render() {
   ctx.clearRect(0, 0, W, H);
+
+  // ----- aurora gradient blobs (soft drifting color clouds) -----
+  const tnow0 = performance.now() / 1000;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const a of auroras) {
+    a.x += a.vx * 0.016;
+    a.y += a.vy * 0.016;
+    a.phase += 0.005;
+    if (a.x < -a.r) a.x = W + a.r;
+    if (a.x > W + a.r) a.x = -a.r;
+    if (a.y < -a.r) a.y = H + a.r;
+    if (a.y > H + a.r) a.y = -a.r;
+    const pulse = 0.7 + 0.3 * Math.sin(a.phase + tnow0 * 0.4);
+    const r = a.r * pulse;
+    const grd = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, r);
+    grd.addColorStop(0, a.color);
+    grd.addColorStop(1, a.color.replace(/,[^,]+\)$/, ',0)'));
+    ctx.fillStyle = grd;
+    ctx.fillRect(a.x - r, a.y - r, r * 2, r * 2);
+  }
+  ctx.restore();
 
   // ----- background stars (drift outward + twinkle) -----
   const tnow = performance.now() / 1000;
@@ -1841,23 +1937,32 @@ function render() {
     ctx.restore();
   }
 
-  // ----- Combo banner (top-center) -----
+  // ----- Combo banner (top-center, scales+cycles color with combo) -----
   if (game && game.combo >= 5) {
     const k = Math.min(1, game.comboTimer / 0.4);
+    const tnow = performance.now() / 1000;
     ctx.save();
-    ctx.globalAlpha = 0.85 * k;
+    ctx.globalAlpha = 0.92 * k;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    const big = Math.min(48, 22 + game.combo * 0.6);
+    const big = Math.min(72, 22 + game.combo * 0.9);
     ctx.font = `900 ${big}px -apple-system,sans-serif`;
-    ctx.fillStyle = '#ffd24a';
-    ctx.shadowColor = '#ff8a3a';
-    ctx.shadowBlur = 18;
-    ctx.fillText(`${game.combo} COMBO`, CX, 48);
+    // hue cycle past combo 20 — yellow→orange→pink→magenta→cyan
+    const hue = game.combo < 20 ? 50 : (50 + (game.combo - 20) * 6 + tnow * 120) % 360;
+    const sat = Math.min(100, 70 + game.combo * 0.4);
+    ctx.fillStyle = `hsl(${hue},${sat}%,62%)`;
+    ctx.shadowColor = `hsl(${hue},${sat}%,55%)`;
+    ctx.shadowBlur = 18 + Math.min(28, game.combo * 0.4);
+    // subtle scale wobble on each kill (riffs on comboTimer max 1.6)
+    const wobble = 1 + Math.max(0, (game.comboTimer - 1.5)) * 0.4;
+    ctx.translate(CX, 56);
+    ctx.scale(wobble, wobble);
+    ctx.fillText(`${game.combo} COMBO`, 0, -8);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.shadowBlur = 0;
-    ctx.font = '700 11px -apple-system,sans-serif';
-    ctx.fillStyle = '#ffe9b8';
-    ctx.fillText(`x${(1 + game.combo * 0.02).toFixed(2)}`, CX, 48 + big * 0.95);
+    ctx.font = '700 12px -apple-system,sans-serif';
+    ctx.fillStyle = `hsl(${hue},${sat}%,80%)`;
+    ctx.fillText(`x${(1 + game.combo * 0.03).toFixed(2)}`, CX, 56 + big * 0.95);
     ctx.restore();
   }
 
@@ -1867,7 +1972,7 @@ function render() {
   ctx.font = '700 10px -apple-system,sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'bottom';
-  ctx.fillText('v11 — build helper UI', 8, H - 6);
+  ctx.fillText('v12 — full neon', 8, H - 6);
   ctx.restore();
 
   // status panel (toggleable)
